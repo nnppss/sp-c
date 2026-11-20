@@ -230,6 +230,8 @@ export function Books({ workspace, firm, view, savedFocus, shortcut, open, repla
           {screen.saved && <p role="status">{voucher.reversesId === null ? 'Voucher posted.' : 'Reversal posted.'}</p>}
           <p>{voucher.day}{voucher.memo && ' · ' + voucher.memo}</p>
           {voucher.payee && <p>Payee {payeeName(voucher.payee)}</p>}
+          {voucher.employee && <p>Employee <button className="book-link" id="voucher-employee"
+            onClick={() => ledger(voucher.employee!.id)}>{voucher.employee.name}</button></p>}
           {voucher.reversesId !== null && <p>Reverses <button className="book-link" id="original-voucher"
             onClick={() => showVoucher(voucher.reversesId!)}>voucher #{voucher.reversesId}</button></p>}
           {voucher.reversedById !== null && <p>Reversed by <button className="book-link" id="linked-reversal"

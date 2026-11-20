@@ -4,6 +4,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { parentPort, workerData } from 'node:worker_threads';
 import { accountingSchema, BookInputError, replayDemo, runAccountingCommand } from './accounting';
 import type { BookCommand } from './books';
+import { StatementFileError } from './statement-file';
 import { FIRM_FIELDS, isWorkspaceKind, workspaceName } from './workspace';
 import type { Firm, FirmDetails, WorkerReply, Workspace, WorkspaceCommand, WorkspaceKind } from './workspace';
 
@@ -45,6 +46,30 @@ const migrations = [
    ALTER TABLE vouchers ADD COLUMN payee_person TEXT;
    ALTER TABLE vouchers ADD COLUMN payee_firm_id INTEGER REFERENCES firms(id)
      CHECK (payee_firm_id IS NULL OR payee_person IS NULL);`,
+  `ALTER TABLE cashbooks ADD COLUMN employee_id INTEGER REFERENCES accounts(id);
+   CREATE INDEX cashbooks_by_employee ON cashbooks(firm_id, employee_id);
+   ALTER TABLE vouchers ADD COLUMN employee_id INTEGER REFERENCES accounts(id);
+   CREATE INDEX vouchers_by_employee ON vouchers(firm_id, employee_id);
+   CREATE TABLE statement_rows (
+     id INTEGER PRIMARY KEY,
+     firm_id INTEGER NOT NULL REFERENCES firms(id),
+     bank_id INTEGER NOT NULL,
+     day TEXT NOT NULL,
+     description TEXT NOT NULL,
+     reference TEXT NOT NULL,
+     value INTEGER NOT NULL CHECK (value <> 0),
+     occurrence INTEGER NOT NULL CHECK (occurrence > 0),
+     filename TEXT NOT NULL,
+     sheet TEXT NOT NULL,
+     row_number INTEGER NOT NULL,
+     voucher_id INTEGER,
+     UNIQUE (bank_id, day, description, reference, value, occurrence),
+     UNIQUE (bank_id, voucher_id),
+     FOREIGN KEY (firm_id, bank_id) REFERENCES accounts(firm_id, id),
+     FOREIGN KEY (firm_id, voucher_id) REFERENCES vouchers(firm_id, id)
+   ) STRICT;
+   CREATE INDEX statement_review ON statement_rows(firm_id, bank_id, day, id);
+   CREATE INDEX statement_by_voucher ON statement_rows(firm_id, voucher_id);`,
 ];
 
 class FirmInputError extends Error {}
@@ -197,7 +222,7 @@ if (parentPort) {
       }
       reply = { id, result: 'firmId' in command ? runBookCommand(db, command) : runWorkspaceCommand(db, command) };
     } catch (error) {
-      const invalidInput = error instanceof FirmInputError || error instanceof BookInputError;
+      const invalidInput = error instanceof FirmInputError || error instanceof BookInputError || error instanceof StatementFileError;
       if (!invalidInput) console.error(error);
       reply = { id, error: invalidInput ? error.message
         : 'The workspace could not be accessed. Check its files and try again.' };

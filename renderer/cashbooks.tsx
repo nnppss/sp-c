@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { PAGE_SIZE } from '../desktop/books';
-import type { Cashbook, CashbookQuery, Chart, PostVoucher } from '../desktop/books';
+import type { Cashbook, CashbookQuery, Chart, NamedAccount, PostVoucher } from '../desktop/books';
 import type { Firm, WorkspaceKind } from '../desktop/workspace';
 import { accountLabels, EntryActions, entryKeys, errorMessage, money, parseAmount, payeeName, today, useEntry } from './book-entry';
 import type { EntryContext } from './book-entry';
@@ -11,7 +11,8 @@ type Movement = keyof typeof actions;
 type PayeeType = 'Expense' | 'Person' | 'Firm';
 export type CashbookView =
   | { name: 'directory'; page?: number; notice?: string }
-  | { name: 'new'; requestId: string }
+  | { name: 'new'; requestId: string; employeeId?: number }
+  | { name: 'custodian'; accountId: number }
   | { name: 'ledger'; query: CashbookQuery }
   | { name: 'movement'; accountId: number; movement: Movement; requestId: string }
   | { name: 'remove'; accountId: number };
@@ -21,31 +22,49 @@ function title(name: string) {
   return <h2 id="cashbook-title" tabIndex={-1}>{name}</h2>;
 }
 
-function CashbookEntry({ workspace, firmId, shortcut, cancel, requestId, done }: EntryContext & {
-  requestId: string; done: (cashbook: Cashbook) => void;
+function CashbookEntry({ workspace, firmId, shortcut, cancel, requestId, employeeId, cashbook, employees, done }: EntryContext & {
+  requestId?: string; employeeId?: number; cashbook?: Cashbook; employees: NamedAccount[]; done: (cashbook: Cashbook) => void;
 }) {
+  const [selected, setSelected] = useState(cashbook?.employeeId ?? employeeId ?? 0);
   const first = useRef<HTMLInputElement>(null);
-  useLayoutEffect(() => { first.current?.focus(); }, []);
+  const custodianField = useRef<HTMLSelectElement>(null);
+  useLayoutEffect(() => { (first.current ?? custodianField.current)?.focus(); }, []);
   const { busy, error, save } = useEntry(data => {
+    const custodian = String(data.get('custodian') ?? '');
+    const assigned = { custodian, employeeId: selected || undefined };
+    if (cashbook) return window.workspaces.saveCashbookCustodian(workspace, firmId, { accountId: cashbook.id, ...assigned });
     const amount = String(data.get('openingCash')).trim();
     const openingCash = /^0+(?:\.0{1,2})?$/.test(amount) ? 0 : parseAmount(amount);
     return window.workspaces.createCashbook(workspace, firmId, {
-      requestId, name: String(data.get('name')), custodian: String(data.get('custodian')),
+      requestId: requestId!, name: String(data.get('name')), ...assigned,
       openedOn: String(data.get('openedOn')), openingCash,
     });
   }, done);
   return <form id="cashbook-form" className="panel settings book-form" onSubmit={save}
     onKeyDown={event => entryKeys(event, cancel, busy)}>
-    {title('New cashbook')}
+    {title(cashbook ? 'Change custodian · ' + cashbook.name : 'New cashbook')}
     <fieldset disabled={busy}>
-      <label htmlFor="cashbook-name">Cashbook name</label>
-      <input id="cashbook-name" ref={first} name="name" maxLength={180} required />
-      <label htmlFor="cashbook-custodian">Custodian</label>
-      <input id="cashbook-custodian" name="custodian" maxLength={180} required />
-      <label htmlFor="cashbook-opened">Opening date</label>
-      <input id="cashbook-opened" name="openedOn" type="date" defaultValue={today()} required />
-      <label htmlFor="cashbook-opening">Opening cash (₹)</label>
-      <input id="cashbook-opening" name="openingCash" inputMode="decimal" defaultValue="0" maxLength={17} required />
+      {!cashbook && <>
+        <label htmlFor="cashbook-name">Cashbook name</label>
+        <input id="cashbook-name" ref={first} name="name" maxLength={180} required />
+      </>}
+      {(employees.length > 0 || cashbook) && <>
+        <label htmlFor="cashbook-employee">Employee custodian</label>
+        <select ref={custodianField} id="cashbook-employee" value={selected} onChange={event => setSelected(Number(event.target.value))}>
+          <option value={0}>Enter a custodian name</option>
+          {employees.map(employee => <option key={employee.id} value={employee.id}>{employee.name}</option>)}
+        </select>
+      </>}
+      {!selected && <>
+        <label htmlFor="cashbook-custodian">Custodian</label>
+        <input id="cashbook-custodian" name="custodian" maxLength={180} defaultValue={cashbook?.custodian} required />
+      </>}
+      {!cashbook && <>
+        <label htmlFor="cashbook-opened">Opening date</label>
+        <input id="cashbook-opened" name="openedOn" type="date" defaultValue={today()} required />
+        <label htmlFor="cashbook-opening">Opening cash (₹)</label>
+        <input id="cashbook-opening" name="openingCash" inputMode="decimal" defaultValue="0" maxLength={17} required />
+      </>}
     </fieldset>
     <EntryActions label="Save cashbook" {...{ busy, error, shortcut, cancel }} />
   </form>;
@@ -145,7 +164,14 @@ function RemoveCashbook({ workspace, firmId, cancel, cashbook, done }: EntryCont
 async function load(workspace: WorkspaceKind, firmId: number, view: CashbookView) {
   const bridge = window.workspaces;
   if (view.name === 'ledger') return { ...view, report: await bridge.getCashbookLedger(workspace, firmId, view.query) };
-  if (view.name === 'new') return view;
+  if (view.name === 'new' || view.name === 'custodian') {
+    const [employees, cashbook] = await Promise.all([
+      bridge.getNamedAccounts(workspace, firmId, { kind: 'employee' }),
+      view.name === 'custodian' ? bridge.getCashbooks(workspace, firmId).then(books => books.find(book => book.id === view.accountId))
+        : undefined,
+    ]);
+    return { ...view, cashbook, employees: employees.filter(employee => !employee.archived || employee.id === cashbook?.employeeId) };
+  }
   if (view.name === 'movement') {
     const [cashbooks, chart] = await Promise.all([bridge.getCashbooks(workspace, firmId), bridge.getChart(workspace, firmId)]);
     return { ...view, cashbook: cashbooks.find(book => book.id === view.accountId), chart };
@@ -193,8 +219,12 @@ export function Cashbooks({ workspace, firm, firms, view, savedFocus, shortcut, 
     const screen = snapshot.result;
     switch (screen.name) {
       case 'new':
+      case 'custodian':
+        if (screen.name === 'custodian' && (!screen.cashbook || screen.cashbook.archived)) return <p>Choose an active cashbook.</p>;
         return firm.archived ? null :
-          <CashbookEntry {...context} requestId={screen.requestId} done={book => openLedger(book.id, true)} />;
+          <CashbookEntry {...context} cashbook={screen.cashbook} employees={screen.employees}
+            requestId={screen.name === 'new' ? screen.requestId : undefined}
+            employeeId={screen.name === 'new' ? screen.employeeId : undefined} done={book => openLedger(book.id, true)} />;
       case 'directory': {
         const page = screen.page ?? 0;
         const rows = screen.cashbooks.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
@@ -222,9 +252,12 @@ export function Cashbooks({ workspace, firm, firms, view, savedFocus, shortcut, 
         const archived = firm.archived || cashbook.archived === 1;
         return <>
           <div className="book-heading">{title(cashbook.name)}
-            {!archived && <button className="secondary" id="remove-cashbook" onClick={() => open({ name: 'remove', accountId })}>
-              Remove cashbook
-            </button>}
+            {!archived && <div className="book-heading">
+              <button className="secondary" id="edit-custodian" onClick={() => open({ name: 'custodian', accountId })}>
+                Change custodian</button>
+              <button className="secondary" id="remove-cashbook" onClick={() => open({ name: 'remove', accountId })}>
+                Remove cashbook</button>
+            </div>}
           </div>
           {cashbook.archived === 1 && <p>Archived cashbook</p>}
           <dl className="balances">

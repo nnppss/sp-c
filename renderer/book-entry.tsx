@@ -56,7 +56,8 @@ export function entryKeys(event: KeyboardEvent<HTMLFormElement>, cancel: () => v
     return;
   }
   if (event.key !== 'Enter') return;
-  const fields = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('input, select, button[type="submit"]'));
+  const fields = Array.from(event.currentTarget.querySelectorAll<HTMLElement>(
+    'input:not(:disabled), select:not(:disabled), button[type="submit"]:not(:disabled)'));
   const index = fields.indexOf(event.target as HTMLElement);
   if (index >= 0 && index < fields.length - 1) {
     event.preventDefault();
@@ -98,8 +99,10 @@ export function useEntry<T>(submit: (data: FormData) => Promise<T>, done: (resul
 export function EntryActions({ label, busy, error, shortcut, cancel }: {
   label: string; busy: boolean; error: string; shortcut: string; cancel: () => void;
 }) {
+  const alert = useRef<HTMLParagraphElement>(null);
+  useLayoutEffect(() => { if (error && !busy) alert.current?.focus(); }, [error, busy]);
   return <>
-    {error && <p className="error" role="alert">{error}</p>}
+    {error && <p ref={alert} className="error" role="alert" tabIndex={-1}>{error}</p>}
     <div className="form-actions">
       <button type="submit" className="action" disabled={busy}>{busy ? 'Saving…' : label}</button>
       <kbd>{shortcut}</kbd>

@@ -382,3 +382,146 @@ test('contractors share sites and trace a split payment, refund, settlement and 
     db.close();
   }
 });
+
+test('employee payroll and advances settle separately from cash custody and reimbursements', () => {
+  const db = openWorkspace(directory, 'live', fixture);
+  try {
+    const company = firm(db, 'live', 'Payroll sample');
+    const other = firm(db, 'live', 'Other firm');
+    const run = books(db, 'live', company);
+    const employee = run('saveNamedAccount', { id: null, kind: 'employee', name: 'Vikram', role: 'Site supervisor', number: '' });
+    const bank = run('createAccount', { kind: 'bank', name: 'Bank' });
+    const expense = run('createAccount', { kind: 'expense', name: 'Site supplies' });
+    const office = run('createCashbook', { name: 'Office cash', custodian: 'Office', openedOn: today,
+      openingCash: 2_000_000, requestId: 'office' });
+    const cash = run('createCashbook', { name: 'Site cash', custodian: '', employeeId: employee.id, openedOn: today,
+      openingCash: 0, requestId: 'site' });
+    expect(() => books(db, 'live', other)('createCashbook', { name: 'Other cash', custodian: '', employeeId: employee.id,
+      openedOn: today, openingCash: 0, requestId: 'other-cash' })).toThrow('available account');
+    const handover = run('postVoucher', { kind: 'Contra', day: today, requestId: 'handover', memo: '',
+      lines: [{ accountId: office.id, siteId: null, value: -250_000 }, { accountId: cash.id, siteId: null, value: 250_000 }] });
+    const payroll = { day: today, accountId: employee.id, memo: '' };
+    const advance = { ...payroll, action: 'Salary advance', amount: 200_000, fundingId: bank.id, requestId: 'advance' } as const;
+    const originalAdvance = run('postEmployee', advance);
+    expect(run('postEmployee', advance)).toEqual(originalAdvance);
+    const ledger = () => run('getEmployeeLedger', { accountId: employee.id });
+    expect(ledger().advances?.closing).toBe(200_000n);
+    expect(ledger().personal.closing).toBe(0n);
+    run('postEmployee', { ...payroll, action: 'Salary earned', amount: 2_400_000, requestId: 'salary' });
+    const apply = { ...payroll, action: 'Apply advance', amount: 200_000, requestId: 'apply' } as const;
+    expect(() => run('postEmployee', { ...apply, amount: 200_001 })).toThrow('exceeds');
+    run('postEmployee', apply);
+    expect(ledger().personal.closing).toBe(-2_200_000n);
+    expect(ledger().advances?.closing).toBe(0n);
+    run('postEmployee', { ...payroll, action: 'Salary payment', amount: 2_200_000, fundingId: bank.id, requestId: 'payment' });
+    const repayment = { ...payroll, action: 'Advance repayment', amount: 10_000, fundingId: office.id, requestId: 'repayment' } as const;
+    expect(() => run('postEmployee', repayment)).toThrow('exceeds');
+    run('postEmployee', { ...advance, amount: 10_000, requestId: 'new-advance' });
+    run('postEmployee', repayment);
+    const reimbursement = run('postEmployee', { ...payroll, action: 'Reimbursement', amount: 50_000, offsetId: expense.id,
+      fundingId: bank.id, requestId: 'reimbursement' });
+    expect(reimbursement.amount).toBe(50_000);
+    expect(ledger().personal.rows.find(row => row.voucherId === reimbursement.id)).toMatchObject({ value: 0, reimbursement: 50_000 });
+    const reversal = run('reverseVoucher', { voucherId: reimbursement.id, requestId: 'reverse-reimbursement', day: today, memo: 'Correction' });
+    expect(ledger().personal.rows.find(row => row.voucherId === reversal.id)).toMatchObject({ value: 0, reimbursement: -50_000 });
+    const adjustment = { ...payroll, action: 'Manual adjustment', amount: 5_000, offsetId: expense.id } as const;
+    run('postEmployee', { ...adjustment, reducePayable: false, requestId: 'adjust' });
+    run('postEmployee', { ...adjustment, reducePayable: true, requestId: 'undo-adjustment' });
+    expect(ledger().personal.closing).toBe(0n);
+    expect(ledger().advances?.closing).toBe(0n);
+    expect(run('getTrialBalance', {}).rows.find(row => row.system === 'salary')?.balance).toBe(2_400_000n);
+    const renamed = run('saveNamedAccount', { ...employee, kind: 'employee', name: 'Vikram Sharma' });
+    expect(renamed.id).toBe(employee.id);
+    expect(run('getCashbooks').find(book => book.id === cash.id)).toMatchObject({ employeeId: employee.id, custodian: 'Vikram Sharma' });
+    expect(run('getCashbookLedger', { accountId: cash.id })).toMatchObject({
+      closing: 250_000n, rows: [{ voucherId: handover.id }],
+    });
+    expect(run('removeNamedAccount', { kind: 'employee', accountId: employee.id })).toEqual({ archived: true });
+    expect(ledger().personal.closing).toBe(0n);
+  } finally {
+    db.close();
+  }
+});
+
+test('statement imports preserve multiplicity and confirmation links exactly one eligible bank movement', async () => {
+  const SheetJS = await import('xlsx');
+  let db = openWorkspace(directory, 'live', fixture);
+  try {
+    const company = firm(db, 'live', 'Bank sample');
+    const other = firm(db, 'live', 'Other bank firm');
+    let run = books(db, 'live', company);
+    const bank = run('saveNamedAccount', { id: null, name: 'HDFC Bank', role: 'Current', number: '004821', kind: 'bank' });
+    const anuj = run('saveContractor', { id: null, name: 'Anuj', siteIds: [], newSites: ['Yamuna', 'Bodla'] });
+    const site = run('getChart').sites.find(site => site.name === 'Yamuna')!;
+    const bodla = run('getChart').sites.find(site => site.name === 'Bodla')!;
+    const accountId = bank.id;
+    const movement = { bankId: bank.id, accountId: anuj.id, day: today, siteId: site.id, value: -500_000 };
+    const existing = run('postBank', { ...movement, memo: 'Existing payment', requestId: 'manual' });
+    const wrongSite = run('postBank', { ...movement, siteId: bodla.id, memo: 'Bodla payment', requestId: 'wrong-site' });
+    const signedMapping = { date: 0, description: 1, reference: 2, amount: 3 };
+    const csv = (data: string) => ({ filename: 'statement.csv', bytes: new TextEncoder().encode(data).buffer as ArrayBuffer });
+    const first = 'Date,Description,Reference,Amount\n20/11/2026,Anuj at Yamuna,0001,"(5,000.00)"\n';
+    const initial = { ...csv(first), accountId, mapping: signedMapping };
+    expect(run('previewStatement', initial).rows[0]).toEqual(['20/11/2026', 'Anuj at Yamuna', '0001', '(5,000.00)']);
+    expect(run('importStatement', initial)).toEqual({ added: 1, existing: 0 });
+    expect(run('importStatement', initial)).toEqual({ added: 0, existing: 1 });
+    expect(() => run('importStatement', { ...initial, ...csv(first +
+      '2026-11-19,Valid row,0002,-2\n2026-11-31,Malformed date,0003,1\n') })).toThrow('Row 4: Enter a valid date.');
+    expect(run('getStatements', { accountId }).rows).toHaveLength(1);
+    expect(() => books(db, 'live', other)('getStatements', { accountId })).toThrow('available account');
+
+    const sheet = SheetJS.utils.aoa_to_sheet([
+      ['Date', 'Description', 'Reference', 'Debit', 'Credit'],
+      [new Date('2026-11-20T00:00:00Z'), 'Anuj at Yamuna', '0001', 5000, null],
+      [new Date('2026-11-20T00:00:00Z'), 'Anuj at Yamuna', '0001', 5000, null],
+      [new Date('2026-11-21T00:00:00Z'), 'Unreviewed receipt', '0002', null, 12.5],
+    ], { UTC: true });
+    const workbook = SheetJS.utils.book_new();
+    SheetJS.utils.book_append_sheet(workbook, SheetJS.utils.aoa_to_sheet([['Info'], ['Read me']]), 'Info');
+    SheetJS.utils.book_append_sheet(workbook, sheet, 'Movements');
+    const overlap = { filename: 'overlap.xlsx', bytes: SheetJS.write(workbook, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer,
+      sheet: 'Movements', accountId, mapping: { date: 0, description: 1, reference: 2, debit: 3, credit: 4 } };
+    expect(run('previewStatement', overlap).sheets).toEqual(['Info', 'Movements']);
+    expect(run('importStatement', overlap)).toEqual({ added: 2, existing: 1 });
+    expect(run('importStatement', overlap)).toEqual({ added: 0, existing: 3 });
+    expect(run('getLedger', { accountId }).closing).toBe(-1_000_000n);
+    const payments = run('getStatements', { accountId }).rows.filter(row => row.value === -500_000);
+    expect(payments).toHaveLength(2);
+    const review = { bankId: accountId, rowId: payments[0].id, accountId: anuj.id, siteId: site.id };
+    expect(run('getStatementMatches', review).rows.map(row => row.id)).toEqual([existing.id]);
+    expect(() => run('confirmStatement', { ...review, requestId: 'wrong', voucherId: wrongSite.id })).toThrow('does not match');
+    expect(run('confirmStatement', { ...review, requestId: 'match', voucherId: existing.id }).id).toBe(existing.id);
+    expect(run('getLedger', { accountId }).closing).toBe(-1_000_000n);
+    const post = { ...review, rowId: payments[1].id, voucherId: null, requestId: 'statement-post' };
+    expect(run('getStatementMatches', post).rows).toEqual([]);
+    const created = run('confirmStatement', post);
+    expect(run('confirmStatement', post).id).toBe(created.id);
+    expect(run('getLedger', { accountId }).rows.some(row => row.voucherId === created.id)).toBe(true);
+    expect(run('getContractorLedger', { accountId: anuj.id, siteId: site.id }).rows.map(row => row.voucherId))
+      .toEqual([existing.id, created.id]);
+
+    const ambiguous = run('postBank', { ...movement, day: '2026-11-22', memo: 'Second date', requestId: 'ambiguous-1' });
+    const ambiguous2 = run('postBank', { ...movement, day: '2026-11-22', memo: 'Second date duplicate', requestId: 'ambiguous-2' });
+    run('importStatement', { ...initial, ...csv('Date,Description,Reference,Amount\n2026-11-22,Ambiguous,, -5000\n') });
+    const unresolved = run('getStatements', { accountId, pending: true }).rows;
+    expect(unresolved.map(row => row.description)).toEqual(['Ambiguous', 'Unreviewed receipt']);
+    expect(run('getStatementMatches', { ...review, rowId: unresolved[0].id }).rows.map(row => row.id))
+      .toEqual([ambiguous2.id, ambiguous.id]);
+
+    db.close();
+    db = openWorkspace(directory, 'live', fixture);
+    run = books(db, 'live', company);
+    expect(run('getStatements', { accountId, pending: true }).rows).toEqual(unresolved);
+    run('reverseVoucher', { voucherId: created.id, requestId: 'reverse', day: today, memo: 'Correction' });
+    expect(run('getStatement', post).voucherId).toBeNull();
+    expect(() => run('confirmStatement', post)).toThrow('previous posting was reversed');
+    const reposted = run('confirmStatement', { ...post, requestId: 'repost' });
+    expect(reposted.id).not.toBe(created.id);
+    const pendingBank = run('createAccount', { kind: 'bank', name: 'Pending bank' });
+    run('importStatement', { ...initial, accountId: pendingBank.id });
+    expect(run('removeNamedAccount', { kind: 'bank', accountId: pendingBank.id })).toEqual({ archived: true });
+    expect(run('getStatements', { accountId: pendingBank.id, pending: true }).rows).toHaveLength(1);
+  } finally {
+    db.close();
+  }
+});

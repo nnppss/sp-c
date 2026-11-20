@@ -11,8 +11,8 @@
 | 3. Vouchers and accounting core | Verified | Posted and reversed a ₹5,000.25 sample payment. The day book and trial balance led to the same voucher, and the fixture reconciled to ₹21,98,000 on each side. |
 | 4. Contractors | Verified | One ₹40,000 bank payment and a ₹2,000 cash return leave Anuj with ₹38,000 net given. Both sites open the original payment. |
 | 5. Cashbooks | Verified | Vikram holds ₹2,500 after the handover, expense and return. Total firm cash fell only by the ₹6,500 expense. |
-| 6. Employees | Planned | Salary, advances and reimbursements can be followed separately from cash held for the firm. First accountant pilot. |
-| 7. Bank | Planned | The accountant can import a statement, match or post each row, and resume after restart. |
+| 6. Employees | Verified | Vikram’s salary and advance settled while he retained ₹2,500 in company cash. The sample pilot is ready for accountant feedback. |
+| 7. Bank | Verified | CSV and XLSX statement rows can be posted or matched, and pending rows survive restart. |
 | 8. Sale & Purchase | Planned | Printable GST invoices support bill payments and pre-tax allocations across firms. |
 | 9. Reports | Planned | Financial, tax and management reports reconcile to source vouchers. |
 | 10. Backup, restore and release | Planned | Packaged Mac and Windows apps can open and recover the same set of books. |
@@ -120,6 +120,8 @@ Use a sample workspace with two firms, issued invoices, contractor site splits a
 | 20 Nov 2026 | Phase 3 vouchers and accounting core | Replayed the 40 prototype vouchers into SQLite and reconciled every account and site total. Posted a sample payment and followed it from the day book and trial balance through to the ledger and voucher. [Checks and platform coverage](#phase-3-verification) |
 | 20 Nov 2026 | Phase 4 contractors | Entered Anuj’s bank payment, site split, Bodla cash return and manual settlement from the keyboard. Verified shared assignments, voucher links, and archived history after restart. [Checks and platform coverage](#phase-4-verification) |
 | 20 Nov 2026 | Phase 5 cashbooks | Reconciled Vikram’s site cash and office cash by date. The cashbook showed Vikram as custodian and Vikram Enterprises as the payee firm. Verified source vouchers and the balance after an offline restart. [Checks and platform coverage](#phase-5-verification) |
+| 20 Nov 2026 | Phase 6 employees | Verified payroll settlement, separate cash custody, reimbursement and advance repayment in offline Demo books. The accountant walkthrough is pending. [Checks](#phase-6-verification) · [Pilot worksheet](#daily-entry-sample-pilot) |
+| 20 Nov 2026 | Phase 7 bank | Verified CSV and XLSX imports, both confirmation paths, overlapping exports and pending rows after offline restart. [Checks](#phase-7-verification) |
 
 ### Reproduce the prototype baseline
 
@@ -170,3 +172,33 @@ The local package attempts used cached Electron archives via `--config.electronD
 - Both histories referenced the same contra vouchers. The 19 Nov as-of view showed ₹3,500 and opened the ₹6,500 payment. Back restored the date and voucher focus. Forward reopened the payment, which showed Vikram Enterprises and its owner Vikram. The cashbook identified Vikram as custodian. The ₹2,500 balance and payment link survived an offline relaunch.
 - `npm test` passed all 11 tests. The cashbook regression checked exact paise, posting dates, firm scope, duplicate saves, person and firm payees, reversals, archival with history and persistence. `python3 -B scripts/capture-prototype.py --check` matched the fixed-date 40-voucher baseline.
 - Phase 8 remains responsible for applying cash payments to invoices. Phase 5 package checks on macOS and Windows remain pending.
+
+### Phase 6 verification
+
+- `npm run test:desktop` passed on macOS 27.0 arm64 with Electron 45.3.2. The offline workflow created Vikram in disposable Demo books, linked the existing site cashbook to his employee record, and opened its voucher history from his company-cash view. Back restored keyboard focus to the cashbook link.
+- A ₹2,000 advance posted to the employee’s advance ledger. ₹24,000 salary earned credited the employee payable and debited Salaries. Applying the advance left ₹22,000 payable and cleared the advance. The bank payment cleared salary payable. The trial balance showed ₹24,000 in Salaries, and Vikram still held ₹2,500 of company cash.
+- The keyboard workflow posted and repaid a separate ₹300 advance and paid a ₹500 reimbursement. It opened the repayment from the advance ledger and checked the reimbursement and ₹2,500 cash balance after restart. The SQLite regression also covered manual adjustments, over-application and over-repayment, duplicate payroll saves, reimbursement reversal, custodian rename and archive history.
+- The [daily-entry sample pilot](#daily-entry-sample-pilot) is ready for the accountant walkthrough. Feedback and sign-off on the entry order, search and site totals are pending.
+
+### Phase 7 verification
+
+- In the same offline desktop test, a manually entered ₹5,000 payment to Anuj at Yamuna was matched from a CSV statement row. The next ₹5,000 row was posted from XLSX as a second voucher. Both vouchers opened from the bank book and Anuj’s Yamuna ledger. Inspecting a candidate and going Back restored focus to the voucher link.
+- Reimporting the identical CSV added zero rows. The overlapping XLSX preserved the two same-value payments, including identical rows occurring twice in an export. A malformed date identified source row 3 and the batch added zero rows. The SQLite regression also checked atomic imports, signed amounts and debit/credit mapping, exact paise and worksheet selection.
+- The bank book showed −₹15,000 both before and after importing pending rows. Matching the manual voucher preserved that balance. Posting a new voucher moved it to −₹20,000. Two candidate vouchers for another statement row required an explicit choice, so that row and a pending deposit were still pending after an offline restart. The SQLite regression checked firm scope, repeated confirmation, reversal releasing the match, reposting, and preserving pending rows when a bank account is archived.
+- Matching looks for the same date, signed bank amount, counterparty and site. Overlap detection uses those source rows’ date, description, reference, amount and occurrence count. Two separately exported movements with identical fields and no shared export showing both cannot be distinguished.
+- `npm test` passed all 13 tests. `python3 -B scripts/capture-prototype.py --check` matched all 40 baseline vouchers. Both phases were checked on the Apple silicon development build. Packaged Mac and Windows verification remains pending.
+
+### Daily-entry sample pilot
+
+Run `npm run test:desktop` to prepare and exercise the sample workflow in a disposable, offline Demo profile. For an accountant walkthrough, start in Demo, create a fresh pilot firm, and use the following entries in order. Use a bank account funded with at least ₹70,000 and enter ₹20,000 of dated opening cash in an office cashbook. Create employee Vikram and select him as custodian of a site cashbook opened at ₹0.
+
+| Walkthrough | Entries | Check on screen |
+| --- | --- | --- |
+| Contractor payments | Assign Anuj to Yamuna and Bodla. Pay ₹40,000 from the bank with ₹30,000 at Yamuna and ₹10,000 at Bodla. Receive ₹2,000 into office cash for Bodla. | Anuj shows ₹38,000 net given. Yamuna shows ₹30,000 and Bodla ₹8,000. Both sites open the original payment. |
+| Cash held | Hand over ₹10,000 from office cash to Vikram’s site cashbook. Pay ₹6,500 for site supplies and return ₹1,000 to office cash. | Vikram holds ₹2,500. The ₹6,500 expense is the only cashbook movement that changes total company cash. |
+| Salary and advance | Pay a ₹2,000 salary advance. Record ₹24,000 salary earned. Apply ₹2,000 from the advance ledger and pay ₹22,000 by bank. | Salary payable and advance outstanding are ₹0. Salaries show a debit of ₹24,000. Company cash held shows ₹2,500. |
+| Repayment and reimbursement | Pay a new ₹300 advance, receive its repayment into office cash, and pay a ₹500 site-supplies reimbursement from the bank. | Repayment opens from the salary advance ledger. Reimbursement opens from salary and reimbursements. Salary balances stay settled and site cash stays at ₹2,500. |
+
+Use Enter, Shift+Tab and the arrow keys to move through the forms, Esc to leave a draft, and Cmd+S or Ctrl+S to post. Ask the accountant to try the entry order, find Anuj by name and site, compare the two site totals, and trace the salary and cashbook vouchers. Record feedback on entry order, contractor search and site totals after the walkthrough.
+
+**Accountant feedback pending.** The walkthrough with the accountant, their comments on entry order and search, and their sign-off on site totals remain open.

@@ -126,3 +126,4 @@ footer { border-top: 1px solid var(--line); color: var(--muted); font-size: .76r
 .site-options input { width: auto; margin: 0; }
 .contractor-remove { margin-top: 16px; }
 .voucher-narration { display: block; overflow-wrap: anywhere; color: var(--muted); }
+.statement-mapping { margin-top: 16px; }

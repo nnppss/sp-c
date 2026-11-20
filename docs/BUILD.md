@@ -2,7 +2,7 @@
 
 ## Desktop development
 
-Use Node.js 24 with npm 11 from the project root. Use Python 3.10 or later to regenerate or verify the prototype fixture. The first install needs access to the npm registry and Electron downloads. Once installed, the development app loads the same local renderer used in packaged builds.
+Use Node.js 24 with npm 11 from the project root. Use Python 3.10 or later to regenerate or verify the prototype fixture. The first install needs access to the npm registry, the SheetJS CDN and Electron downloads. Once installed, the development app loads the same local renderer used in packaged builds.
 
 ```sh
 npm ci
@@ -21,6 +21,8 @@ npm run test:desktop
 ```
 
 The fixture check compares the checked-in JSON with a fresh fixed-date Python seed. Vitest checks SQLite migrations, firm persistence, voucher validation, duplicate saves, interruption recovery and linked reversals. It reconciles the demo ledger to the captured account and site balances and checks the issued invoice snapshots. The Electron smoke posts an opening balance and a payment, follows the payment through the reports, reverses it and checks the posted history after an offline restart. It also checks keyboard navigation, focus restoration and firm switching. Run on a graphical desktop. On Windows, use `py -3 -B` in place of `python3 -B`.
+
+The same Electron command runs the daily-entry pilot and the CSV/XLSX review workflows offline in disposable Demo books. See the [pilot worksheet](../phases.md#daily-entry-sample-pilot) for the entries and expected balances.
 
 ## Package and smoke-test
 

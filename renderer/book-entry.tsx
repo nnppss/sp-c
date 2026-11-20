@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import type { FormEvent, KeyboardEvent } from 'react';
 import { ACCOUNT_KINDS, VOUCHER_KINDS } from '../desktop/books';
-import type { AccountKind, Chart, Line, VoucherDetail, VoucherKind } from '../desktop/books';
+import type { AccountKind, Chart, Line, VoucherDetail, VoucherKind, VoucherPayee } from '../desktop/books';
 import type { WorkspaceKind } from '../desktop/workspace';
 
 export const accountLabels: Record<AccountKind, string> = {
@@ -23,6 +23,10 @@ export function money(value: number | bigint) {
   const cents = amount % 100n;
   return (paise < 0n ? '−₹' : '₹') + (amount / 100n).toLocaleString('en-IN') +
     (cents ? '.' + cents.toString().padStart(2, '0') : '');
+}
+
+export function payeeName(payee: VoucherPayee) {
+  return payee.kind === 'Firm' && payee.owner ? payee.name + ' (owner: ' + payee.owner + ')' : payee.name;
 }
 
 export function parseAmount(input: FormDataEntryValue | null) {

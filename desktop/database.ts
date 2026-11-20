@@ -31,6 +31,20 @@ const migrations = [
    INSERT INTO active_firm (id) VALUES (1);
    ALTER TABLE demo_baseline ADD COLUMN firm_id INTEGER REFERENCES firms(id) ON DELETE RESTRICT;`,
   accountingSchema,
+  `CREATE TABLE cashbooks (
+     account_id INTEGER PRIMARY KEY,
+     firm_id INTEGER NOT NULL REFERENCES firms(id),
+     custodian TEXT NOT NULL,
+     opened_on TEXT NOT NULL,
+     request_id TEXT NOT NULL,
+     opening_voucher_id INTEGER,
+     UNIQUE (firm_id, request_id),
+     FOREIGN KEY (firm_id, account_id) REFERENCES accounts(firm_id, id),
+     FOREIGN KEY (firm_id, opening_voucher_id) REFERENCES vouchers(firm_id, id)
+   ) STRICT;
+   ALTER TABLE vouchers ADD COLUMN payee_person TEXT;
+   ALTER TABLE vouchers ADD COLUMN payee_firm_id INTEGER REFERENCES firms(id)
+     CHECK (payee_firm_id IS NULL OR payee_person IS NULL);`,
 ];
 
 class FirmInputError extends Error {}

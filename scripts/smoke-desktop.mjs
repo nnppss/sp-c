@@ -352,13 +352,128 @@ async function exerciseContractors(page, save, back, forward) {
   return settlement;
 }
 
+async function exerciseCashbooks(page, save, back, forward) {
+  await choosePage(page, 'Firms');
+  await pressButton(page, 'New firm');
+  await fillFirm(page, ['Vikram Enterprises', 'Vikram', '', '']);
+  await page.keyboard.press(save);
+  await page.getByText('Firm saved.', { exact: true }).waitFor();
+  await activeFirm(page, 'Firm A');
+
+  await choosePage(page, 'Vouchers');
+  await pressButton(page, 'Chart of accounts');
+  await pressButton(page, 'New account');
+  await typeField(page, 'Account name', 'Site supplies');
+  await chooseOption(page, 'Account type', 'Expense');
+  await page.keyboard.press(save);
+  await page.getByText('Account saved.', { exact: true }).waitFor();
+
+  const bookHeading = name => page.getByRole('heading', { name, exact: true }).waitFor();
+  const history = page.getByRole('table', { name: 'Cashbook history' });
+  const balances = () => page.locator('.book-balances dd').allTextContents();
+  for (const [name, custodian, amount] of [['Office cash', 'Office accountant', '20000'], ['Site cash', 'Vikram', '0']]) {
+    await choosePage(page, 'Cashbooks');
+    await pressButton(page, 'New cashbook');
+    const field = page.getByLabel('Cashbook name', { exact: true });
+    assert.equal(await field.evaluate(input => input === document.activeElement), true);
+    await page.keyboard.type(name);
+    await page.keyboard.press('Enter');
+    assert.equal(await page.getByLabel('Custodian', { exact: true }).evaluate(input => input === document.activeElement), true);
+    await page.keyboard.type(custodian);
+    await page.keyboard.press('Shift+Tab');
+    assert.equal(await field.evaluate(input => input === document.activeElement), true);
+    await page.getByLabel('Opening date', { exact: true }).fill('2026-11-17');
+    await page.getByLabel('Opening cash (₹)', { exact: true }).fill(amount);
+    await page.keyboard.press(save);
+    await bookHeading(name);
+    await page.getByText('Funding firm Firm A', { exact: true }).waitFor();
+    assert.deepEqual(await balances(), [amount === '0' ? '₹0' : '₹20,000', '₹20,000']);
+    if (amount === '0') await page.getByText('No transactions for this date range.', { exact: true }).waitFor();
+    else assert.match(await history.locator('tbody').innerText(), /Opening balance[\s\S]*2026-11-17[\s\S]*₹20,000/);
+  }
+
+  await pressButton(page, 'Record handover');
+  await bookHeading('Record handover · Site cash');
+  await page.keyboard.press('Escape');
+  await bookHeading('Site cash');
+  await pressButton(page, 'Record handover');
+  const date = page.getByLabel('Voucher date', { exact: true });
+  assert.equal(await date.evaluate(input => input === document.activeElement), true);
+  await date.fill('2026-11-18');
+  await page.keyboard.press('Enter');
+  assert.equal(await page.getByLabel('Cash from', { exact: true }).evaluate(input => input === document.activeElement), true);
+  await chooseOption(page, 'Cash from', 'Office cash');
+  await typeField(page, 'Amount (₹)', '10000');
+  await typeField(page, 'Purpose', 'Cash handed to Vikram');
+  await page.keyboard.press(save);
+  const handover = await postedVoucher(page, 'Contra');
+  await page.keyboard.press(back);
+  await bookHeading('Site cash');
+  assert.deepEqual(await balances(), ['₹10,000', '₹20,000']);
+
+  await pressButton(page, 'Record payment');
+  await date.fill('2026-11-19');
+  await chooseOption(page, 'Payment type', 'Pay a firm');
+  await chooseOption(page, 'Payee firm', 'Vikram Enterprises (owner: Vikram)');
+  await chooseOption(page, 'Debit account', 'Site supplies · Expense');
+  await typeField(page, 'Amount (₹)', '6500');
+  await typeField(page, 'Purpose', 'Site materials');
+  await page.keyboard.press(save);
+  const payment = await postedVoucher(page, 'Payment');
+  const payee = 'Payee Vikram Enterprises (owner: Vikram)';
+  await page.getByText(payee, { exact: true }).waitFor();
+  const postings = page.getByRole('table', { name: 'Posting lines' });
+  assert.deepEqual(await postings.locator('tbody tr').allTextContents(), ['Site cash——₹6,500', 'Site supplies—₹6,500—']);
+  await page.keyboard.press(back);
+  await bookHeading('Site cash');
+  assert.deepEqual(await balances(), ['₹3,500', '₹13,500']);
+
+  await pressButton(page, 'Record return');
+  await date.fill('2026-11-20');
+  await chooseOption(page, 'Return to', 'Office cash');
+  await typeField(page, 'Amount (₹)', '1000');
+  await typeField(page, 'Purpose', 'Unused site cash returned');
+  await page.keyboard.press(save);
+  const returned = await postedVoucher(page, 'Contra');
+  await page.keyboard.press(back);
+  await bookHeading('Site cash');
+  assert.deepEqual(await balances(), ['₹2,500', '₹13,500']);
+  assert.equal(await page.locator('.books dd').first().innerText(), 'Vikram');
+  assert.deepEqual(await history.getByRole('button').allTextContents(), [handover, payment, returned]);
+  await history.getByRole('cell', { name: 'Vikram Enterprises (owner: Vikram)', exact: true }).waitFor();
+
+  const asOf = page.getByLabel('As of', { exact: true });
+  await asOf.fill('2026-11-19');
+  await pressButton(page, 'Apply filters');
+  await bookHeading('Site cash');
+  assert.deepEqual(await balances(), ['₹3,500', '₹13,500']);
+  assert.deepEqual(await history.getByRole('button').allTextContents(), [handover, payment]);
+  await pressButton(page, payment);
+  await bookHeading('Payment ' + payment);
+  await page.keyboard.press(back);
+  await bookHeading('Site cash');
+  assert.equal(await asOf.inputValue(), '2026-11-19');
+  assert.equal(await history.getByRole('button', { name: payment, exact: true }).evaluate(button => button === document.activeElement), true);
+  await page.keyboard.press(forward);
+  await page.getByText(payee, { exact: true }).waitFor();
+  await choosePage(page, 'Cashbooks');
+  await pressButton(page, 'Office cash');
+  await bookHeading('Office cash');
+  assert.deepEqual(await balances(), ['₹11,000', '₹13,500']);
+  assert.deepEqual((await history.getByRole('button').allTextContents()).slice(1), [handover, returned]);
+  await pressButton(page, handover);
+  await bookHeading('Contra ' + handover);
+  return payment;
+}
+
 try {
   let page = await launch();
   await heading(page, 'SP & Company');
   assert.match(await page.locator('footer').innerText(), /Offline/);
   assert.deepEqual(await page.evaluate(() => ({ bridge: Object.keys(window.workspaces).sort(), require: typeof window.require })),
-    { bridge: ['createAccount', 'getChart', 'getContractorLedger', 'getContractors', 'getDayBook', 'getLedger',
-      'getTrialBalance', 'getVoucher', 'isMac', 'postVoucher', 'read', 'removeContractor', 'removeFirm', 'reverseVoucher',
+    { bridge: ['createAccount', 'createCashbook', 'getCashbookLedger', 'getCashbooks', 'getChart', 'getContractorLedger',
+      'getContractors', 'getDayBook', 'getLedger', 'getTrialBalance', 'getVoucher', 'isMac', 'postVoucher', 'read',
+      'removeCashbook', 'removeContractor', 'removeFirm', 'reverseVoucher',
       'saveContractor', 'saveFirm', 'saveName', 'selectFirm'], require: 'undefined' });
   assert.equal(await page.evaluate(() => window.workspaces.read('../live').then(() => false, () => true)), true);
   assert.equal(await page.evaluate(() => window.workspaces.saveName('live', '   ').then(() => false, () => true)), true);
@@ -442,6 +557,7 @@ try {
   await page.keyboard.press('ArrowDown');
   await activeFirm(page, 'Firm A');
   await exerciseOpening(page, save);
+  const cashPayment = await exerciseCashbooks(page, save, back, forward);
   const settlement = await exerciseContractors(page, save, back, forward);
   await firmSwitcher.focus();
   await page.keyboard.press('ArrowDown');
@@ -454,7 +570,7 @@ try {
   await pressButton(page, 'Confirm removal');
   await page.getByText('Firm archived. Its records are still available.').waitFor();
   await activeFirm(page, 'Firm B');
-  assert.deepEqual(await firmSwitcher.getByRole('option').allTextContents(), ['Firm A', 'Firm B']);
+  assert.deepEqual(await firmSwitcher.getByRole('option').allTextContents(), ['Firm A', 'Firm B', 'Vikram Enterprises']);
   await pressButton(page, 'Edit SP & Company');
   const history = page.getByRole('region', { name: 'Archived firm history' });
   assert.deepEqual(await history.locator('.balances dd').allTextContents(), ['40', '₹21,98,000', '₹21,98,000']);
@@ -498,8 +614,14 @@ try {
   assert.deepEqual(await page.locator('.books .balances dd').allTextContents(), ['₹40,000', '₹2,000', '₹38,000', '₹8,000']);
   await pressButton(page, settlement);
   await page.getByRole('heading', { name: 'Journal ' + settlement, exact: true }).waitFor();
+  await choosePage(page, 'Cashbooks');
+  await pressButton(page, 'Site cash');
+  await page.getByRole('heading', { name: 'Site cash', exact: true }).waitFor();
+  assert.equal(await page.locator('.book-balances dd').first().innerText(), '₹2,500');
+  await pressButton(page, cashPayment);
+  await page.getByText('Payee Vikram Enterprises (owner: Vikram)', { exact: true }).waitFor();
   assert.deepEqual((await readdir(join(profile, 'workspaces'))).filter(name => name.endsWith('.sqlite3')).sort(), ['demo.sqlite3', 'live.sqlite3']);
-  console.log('Desktop smoke passed: offline workspace and firm persistence, voucher entry and reversal, contractor site splits and cash returns, shared assignments, settlement, archive and source drill-down after restart.');
+  console.log('Desktop smoke passed: offline workspaces and firms, vouchers and reversals, contractors, cashbooks and source drill-down after restart.');
 } finally {
   try {
     if (app) await app.close();

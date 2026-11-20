@@ -1,7 +1,7 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { ACCOUNT_KINDS, PAGE_SIZE, VOUCHER_KINDS } from './books';
-import type { Account, BookCommand, BookResult, Chart, ContractorDirectory, ContractorLedger, Ledger, Line, Site,
-  TrialBalance, Voucher, VoucherDetail } from './books';
+import type { Account, BookCommand, BookResult, Cashbook, CashbookLedger, Chart, ContractorDirectory, ContractorLedger,
+  Ledger, Line, Site, TrialBalance, Voucher, VoucherDetail, VoucherPayee } from './books';
 
 export const accountingSchema = `
   CREATE TABLE accounts (
@@ -92,6 +92,12 @@ function paise(value: unknown) {
   return value;
 }
 
+function requestKey(value: unknown) {
+  check(typeof value === 'string' && value.length >= 1 && value.length <= 128 && !/[^A-Za-z0-9_-]/.test(value),
+    'Enter a valid request ID.');
+  return value;
+}
+
 const accountColumns = 'id, name, kind, archived, system';
 
 function getAccount(db: DatabaseSync, firmId: number, value: unknown, active = false) {
@@ -116,15 +122,24 @@ function getChart(db: DatabaseSync, firmId: number): Chart {
 
 const voucherColumns = `v.id, v.day, v.kind, v.memo, v.amount, v.reverses_id AS reversesId, r.id AS reversedById`;
 const voucherReversal = 'LEFT JOIN vouchers r ON r.firm_id = v.firm_id AND r.reverses_id = v.id';
+const payeeColumns = 'v.payee_person AS person, f.id AS payeeFirmId, f.name AS firmName, f.owner AS owner';
+const payeeJoin = 'LEFT JOIN firms f ON f.id = v.payee_firm_id';
+type PayeeColumns = { person: string | null; payeeFirmId: number | null; firmName: string; owner: string };
+
+function voucherPayee(row: PayeeColumns): VoucherPayee | null {
+  if (row.payeeFirmId !== null) return { kind: 'Firm', firmId: row.payeeFirmId, name: row.firmName, owner: row.owner };
+  return row.person === null ? null : { kind: 'Person', name: row.person };
+}
 
 function getVoucher(db: DatabaseSync, firmId: number, value: unknown): VoucherDetail {
   const voucherId = id(value, 'voucher');
-  const voucher = db.prepare(`SELECT ${voucherColumns} FROM vouchers v ${voucherReversal}
-    WHERE v.firm_id = ? AND v.id = ?`).get(firmId, voucherId) as Voucher | undefined;
-  check(voucher, 'Choose a voucher in this firm.');
+  const row = db.prepare(`SELECT ${voucherColumns}, ${payeeColumns} FROM vouchers v ${voucherReversal} ${payeeJoin}
+    WHERE v.firm_id = ? AND v.id = ?`).get(firmId, voucherId) as (Voucher & PayeeColumns) | undefined;
+  check(row, 'Choose a voucher in this firm.');
+  const { person, payeeFirmId, firmName, owner, ...voucher } = row;
   const lines = db.prepare(`SELECT account_id AS accountId, site_id AS siteId, value FROM posting_lines
     WHERE firm_id = ? AND voucher_id = ? ORDER BY id`).all(firmId, voucherId) as Line[];
-  return { ...voucher, lines };
+  return { ...voucher, lines, payee: voucherPayee({ person, payeeFirmId, firmName, owner }) };
 }
 
 function createAccount(db: DatabaseSync, firmId: number, input: Record<string, unknown>) {
@@ -204,11 +219,98 @@ function removeContractor(db: DatabaseSync, firmId: number, value: unknown) {
   }
 }
 
+const cashbookRows = `SELECT a.id, a.name, a.archived, c.custodian, c.opened_on AS openedOn,
+    COALESCE(v.amount, 0) AS openingCash
+  FROM cashbooks c JOIN accounts a ON a.firm_id = c.firm_id AND a.id = c.account_id
+    LEFT JOIN vouchers v ON v.firm_id = c.firm_id AND v.id = c.opening_voucher_id
+  WHERE c.firm_id = ?`;
+
+function getCashbook(db: DatabaseSync, firmId: number, value: unknown) {
+  const cashbook = db.prepare(cashbookRows + ' AND c.account_id = ?').get(firmId, id(value, 'cashbook')) as Cashbook | undefined;
+  check(cashbook, 'Choose a cashbook in this firm.');
+  return cashbook;
+}
+
+function createCashbook(db: DatabaseSync, firm: { id: number; archived: boolean }, input: Record<string, unknown>) {
+  const firmId = firm.id;
+  const requestId = requestKey(input.requestId);
+  const name = text(input.name, 'Cashbook name', 180, true);
+  const custodian = text(input.custodian, 'Custodian', 180, true);
+  const openedOn = day(input.openedOn);
+  const openingCash = input.openingCash === 0 ? 0 : paise(input.openingCash);
+  check(openingCash >= 0, 'Enter opening cash of zero or more.');
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const prior = db.prepare(cashbookRows + ' AND c.request_id = ?').get(firmId, requestId) as Cashbook | undefined;
+    let cashbook: Cashbook;
+    if (prior) {
+      check(prior.name === name && prior.custodian === custodian && prior.openedOn === openedOn && prior.openingCash === openingCash,
+        'This request ID is already used by a different cashbook.');
+      cashbook = prior;
+    } else {
+      check(!firm.archived, 'Choose an active funding firm to create a cashbook.');
+      const account = createAccount(db, firmId, { name, kind: 'cash' });
+      const openingVoucher = openingCash === 0 ? null : writeVoucher(db, firmId, 'cashbook:' + requestId, {
+        day: openedOn, kind: 'Opening balance', memo: 'Cashbook opening cash',
+        lines: openingLines(db, firmId, account, openingCash),
+      });
+      db.prepare(`INSERT INTO cashbooks (firm_id, account_id, custodian, opened_on, request_id, opening_voucher_id)
+        VALUES (?, ?, ?, ?, ?, ?)`).run(firmId, account.id, custodian, openedOn, requestId, openingVoucher);
+      cashbook = getCashbook(db, firmId, account.id);
+    }
+    db.exec('COMMIT');
+    return cashbook;
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+}
+
+function removeCashbook(db: DatabaseSync, firmId: number, value: unknown) {
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const cashbook = getCashbook(db, firmId, value);
+    check(!cashbook.archived, 'This cashbook is already archived.');
+    const archived = !!db.prepare('SELECT 1 FROM posting_lines WHERE firm_id = ? AND account_id = ? LIMIT 1').get(firmId, cashbook.id);
+    if (archived) {
+      db.prepare('UPDATE accounts SET archived = 1 WHERE firm_id = ? AND id = ?').run(firmId, cashbook.id);
+    } else {
+      db.prepare('DELETE FROM cashbooks WHERE firm_id = ? AND account_id = ?').run(firmId, cashbook.id);
+      db.prepare('DELETE FROM accounts WHERE firm_id = ? AND id = ?').run(firmId, cashbook.id);
+    }
+    db.exec('COMMIT');
+    return { archived };
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+}
+
+function openingLines(db: DatabaseSync, firmId: number, account: Account, value: number): Line[] {
+  check(account.system !== 'capital', 'Choose the account to open.');
+  const capital = db.prepare("SELECT id FROM accounts WHERE firm_id = ? AND system = 'capital'").get(firmId)
+    ?? db.prepare(`INSERT INTO accounts (firm_id, name, kind, system)
+      VALUES (?, 'Opening capital', 'equity', 'capital') RETURNING id`).get(firmId)!;
+  return [{ accountId: account.id, siteId: null, value }, { accountId: capital.id as number, siteId: null, value: -value }];
+}
+
+function paymentPayee(db: DatabaseSync, value: unknown, active: boolean): VoucherPayee {
+  const payee = fields(value);
+  if (payee.kind === 'Person') return { kind: 'Person', name: text(payee.name, 'Payee name', 180, true) };
+  check(payee.kind === 'Firm', 'Choose a person or a firm as payee.');
+  const firmId = id(payee.firmId, 'payee firm');
+  const firm = db.prepare('SELECT name, owner, archived FROM firms WHERE id = ?')
+    .get(firmId) as { name: string; owner: string; archived: number } | undefined;
+  check(firm && (!active || !firm.archived), 'Choose an available payee firm.');
+  return { kind: 'Firm', firmId, name: firm.name, owner: firm.owner };
+}
+
 type Posting = { day: string; kind: string; memo: string; lines: Line[]; reversesId?: number | null;
-  sourceId?: number; sourceAmount?: number; document?: unknown };
+  sourceId?: number; sourceAmount?: number; document?: unknown; payee?: VoucherPayee | null };
 
 // The caller owns the transaction so related records can commit with the posting.
 function writeVoucher(db: DatabaseSync, firmId: number, requestId: string, posting: Posting) {
+  const voucherDay = day(posting.day);
   check(new Set(posting.lines.map(line => line.accountId)).size >= 2, 'Choose at least two different accounts.');
   let debit = 0n;
   let credit = 0n;
@@ -222,6 +324,11 @@ function writeVoucher(db: DatabaseSync, firmId: number, requestId: string, posti
     if (account.kind === 'bank' || account.kind === 'cash') liquid += value;
     else allLiquid = false;
 
+    if (account.kind === 'cash') {
+      const book = db.prepare('SELECT opened_on AS openedOn FROM cashbooks WHERE firm_id = ? AND account_id = ?')
+        .get(firmId, account.id) as { openedOn: string } | undefined;
+      check(!book || voucherDay >= book.openedOn, 'The voucher date must be on or after the cashbook opening date.');
+    }
     if (line.siteId !== null) getSite(db, firmId, line.siteId);
     if (account.kind === 'contractor' && !posting.reversesId) {
       check(line.siteId !== null && db.prepare(`SELECT 1 FROM site_assignments
@@ -237,9 +344,11 @@ function writeVoucher(db: DatabaseSync, firmId: number, requestId: string, posti
   check(posting.sourceAmount === undefined || debit === BigInt(posting.sourceAmount), 'The sample voucher total differs from its lines.');
 
   const { lastInsertRowid } = db.prepare(`INSERT INTO vouchers
-    (id, firm_id, request_id, day, kind, memo, amount, document, reverses_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-    .run(posting.sourceId ?? null, firmId, requestId, day(posting.day), posting.kind, posting.memo, Number(debit),
-      posting.document == null ? null : JSON.stringify(posting.document), posting.reversesId ?? null);
+    (id, firm_id, request_id, day, kind, memo, amount, document, reverses_id, payee_person, payee_firm_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(posting.sourceId ?? null, firmId, requestId, voucherDay, posting.kind, posting.memo, Number(debit),
+      posting.document == null ? null : JSON.stringify(posting.document), posting.reversesId ?? null,
+      posting.payee?.kind === 'Person' ? posting.payee.name : null, posting.payee?.kind === 'Firm' ? posting.payee.firmId : null);
   const insert = db.prepare('INSERT INTO posting_lines (firm_id, voucher_id, account_id, site_id, value) VALUES (?, ?, ?, ?, ?)');
   for (const line of posting.lines) insert.run(firmId, lastInsertRowid, line.accountId, line.siteId, line.value);
   return Number(lastInsertRowid);
@@ -247,9 +356,7 @@ function writeVoucher(db: DatabaseSync, firmId: number, requestId: string, posti
 
 function post(db: DatabaseSync, firm: { id: number; archived: boolean }, input: Record<string, unknown>, reversal: boolean) {
   const firmId = firm.id;
-  const requestId = input.requestId;
-  check(typeof requestId === 'string' && requestId.length >= 1 && requestId.length <= 128 && !/[^A-Za-z0-9_-]/.test(requestId),
-    'Enter a valid voucher request ID.');
+  const requestId = requestKey(input.requestId);
   db.exec('BEGIN IMMEDIATE');
   try {
     const prior = db.prepare('SELECT id FROM vouchers WHERE firm_id = ? AND request_id = ?').get(firmId, requestId);
@@ -257,6 +364,8 @@ function post(db: DatabaseSync, firm: { id: number; archived: boolean }, input: 
     const kind = reversal ? 'Reversal' : VOUCHER_KINDS.find(kind => kind === input.kind);
     check(kind, 'Choose a voucher type.');
     const memo = text(input.memo, reversal ? 'Reversal reason' : 'Narration', 500, reversal);
+    check(input.payee === undefined || kind === 'Payment', 'A payee can be recorded on a payment.');
+    let payee = input.payee === undefined ? null : paymentPayee(db, input.payee, !prior);
     let lines: Line[];
     let reversesId: number | null = null;
 
@@ -266,15 +375,10 @@ function post(db: DatabaseSync, firm: { id: number; archived: boolean }, input: 
       check(original.reversedById === null || original.reversedById === prior?.id, 'This voucher already has a reversal.');
       check(voucherDay >= original.day, 'The reversal date must be on or after the original date.');
       reversesId = original.id;
+      payee = original.payee;
       lines = original.lines.map(line => ({ ...line, value: -line.value }));
     } else if (kind === 'Opening balance') {
-      const account = getAccount(db, firmId, input.accountId);
-      check(account.system !== 'capital', 'Choose the account to open.');
-      const value = paise(input.value);
-      const capital = db.prepare("SELECT id FROM accounts WHERE firm_id = ? AND system = 'capital'").get(firmId)
-        ?? db.prepare(`INSERT INTO accounts (firm_id, name, kind, system)
-          VALUES (?, 'Opening capital', 'equity', 'capital') RETURNING id`).get(firmId)!;
-      lines = [{ accountId: account.id, siteId: null, value }, { accountId: capital.id as number, siteId: null, value: -value }];
+      lines = openingLines(db, firmId, getAccount(db, firmId, input.accountId), paise(input.value));
     } else {
       check(Array.isArray(input.lines) && input.lines.length >= 2, 'Enter at least two posting lines.');
       lines = input.lines.map(value => {
@@ -287,13 +391,15 @@ function post(db: DatabaseSync, firm: { id: number; archived: boolean }, input: 
     if (prior) {
       voucher = getVoucher(db, firmId, prior.id);
       check(voucher.kind === kind && voucher.day === voucherDay && voucher.memo === memo && voucher.reversesId === reversesId &&
+        voucher.payee?.kind === payee?.kind && (payee?.kind === 'Firm'
+          ? voucher.payee?.kind === 'Firm' && voucher.payee.firmId === payee.firmId : voucher.payee?.name === payee?.name) &&
         voucher.lines.length === lines.length && voucher.lines.every((line, index) => {
           const submitted = lines[index];
           return line.accountId === submitted.accountId && line.siteId === submitted.siteId && line.value === submitted.value;
         }), 'This request ID is already used by a different voucher.');
     } else {
       check(!firm.archived, 'Choose an active firm to post vouchers.');
-      const voucherId = writeVoucher(db, firmId, requestId, { day: voucherDay, kind, memo, reversesId, lines });
+      const voucherId = writeVoucher(db, firmId, requestId, { day: voucherDay, kind, memo, reversesId, lines, payee });
       voucher = getVoucher(db, firmId, voucherId);
     }
     db.exec('COMMIT');
@@ -411,10 +517,41 @@ function getTrialBalance(db: DatabaseSync, firmId: number, input: Record<string,
   return { rows: accounts, debit, credit };
 }
 
+function getCashbookLedger(db: DatabaseSync, firmId: number, input: Record<string, unknown>): CashbookLedger {
+  const cashbook = getCashbook(db, firmId, input.accountId);
+  const { to } = period({ to: input.to });
+  const ledger = getLedger(db, firmId, { accountId: cashbook.id, to: to ?? undefined, page: input.page });
+  const { total } = db.prepare(`SELECT CAST(COALESCE(SUM(l.value), 0) AS TEXT) AS total
+    FROM posting_lines l JOIN vouchers v ON v.firm_id = l.firm_id AND v.id = l.voucher_id
+    JOIN accounts a ON a.firm_id = l.firm_id AND a.id = l.account_id
+    WHERE l.firm_id = $firm AND a.kind = 'cash' AND ($to IS NULL OR v.day <= $to)`)
+    .get({ firm: firmId, to }) as { total: string };
+  const counterparty = db.prepare(`SELECT ${payeeColumns}, COALESCE((
+    SELECT group_concat(name, ', ') FROM (
+      SELECT DISTINCT a.name FROM posting_lines p
+      JOIN accounts a ON a.firm_id = p.firm_id AND a.id = p.account_id
+      WHERE p.firm_id = v.firm_id AND p.voucher_id = v.id AND p.account_id <> $account
+        AND (p.value > 0) <> $debit ORDER BY a.name
+    )), '') AS offsets
+    FROM vouchers v ${payeeJoin} WHERE v.firm_id = $firm AND v.id = $voucher`);
+  return {
+    ...ledger, cashbook, totalCash: BigInt(total),
+    rows: ledger.rows.map(row => {
+      const detail = counterparty.get({
+        firm: firmId, voucher: row.voucherId, account: cashbook.id, debit: Number(row.value > 0),
+      }) as PayeeColumns & { offsets: string };
+      return { ...row, payee: voucherPayee(detail), offsets: detail.offsets };
+    }),
+  };
+}
+
 export function runAccountingCommand(db: DatabaseSync, firm: { id: number; archived: boolean }, command: BookCommand): BookResult {
   const firmId = firm.id;
   if (command.operation === 'getChart') return getChart(db, firmId);
   if (command.operation === 'getContractors') return getContractors(db, firmId);
+  if (command.operation === 'getCashbooks') {
+    return db.prepare(cashbookRows + ' ORDER BY a.name, a.id').all(firmId) as Cashbook[];
+  }
   const input = fields(command.input);
   switch (command.operation) {
     case 'createAccount':
@@ -427,6 +564,11 @@ export function runAccountingCommand(db: DatabaseSync, firm: { id: number; archi
       check(!firm.archived, 'Choose an active firm to remove contractors.');
       return removeContractor(db, firmId, input.accountId);
     case 'getContractorLedger': return getLedger(db, firmId, input, true);
+    case 'createCashbook': return createCashbook(db, firm, input);
+    case 'removeCashbook':
+      check(!firm.archived, 'Choose an active funding firm to remove cashbooks.');
+      return removeCashbook(db, firmId, input.accountId);
+    case 'getCashbookLedger': return getCashbookLedger(db, firmId, input);
     case 'postVoucher': return post(db, firm, input, false);
     case 'reverseVoucher': return post(db, firm, input, true);
     case 'getVoucher': return getVoucher(db, firmId, input.voucherId);

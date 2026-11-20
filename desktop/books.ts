@@ -12,16 +12,23 @@ export type Chart = { accounts: Account[]; sites: Site[] };
 export type Contractor = Account & { siteIds: number[] };
 export type ContractorDirectory = { contractors: Contractor[]; sites: Site[] };
 export type ContractorDetails = { id: number | null; name: string; siteIds: number[]; newSites: string[] };
+export type Cashbook = Pick<Account, 'id' | 'name' | 'archived'> & {
+  custodian: string; openedOn: string; openingCash: number;
+};
+export type NewCashbook = Pick<Cashbook, 'name' | 'custodian' | 'openedOn' | 'openingCash'> & { requestId: string };
+type Payee = { kind: 'Person'; name: string } | { kind: 'Firm'; firmId: number };
+export type VoucherPayee = Extract<Payee, { kind: 'Person' }> |
+  (Extract<Payee, { kind: 'Firm' }> & { name: string; owner: string });
 export type Line = { accountId: number; siteId: number | null; value: number };
 export type Voucher = {
   id: number; day: string; kind: string; memo: string; amount: number;
   reversesId: number | null; reversedById: number | null;
 };
-export type VoucherDetail = Voucher & { lines: Line[] };
+export type VoucherDetail = Voucher & { lines: Line[]; payee: VoucherPayee | null };
 export type PostVoucher = {
   requestId: string; day: string; memo: string;
 } & ({ kind: 'Opening balance'; accountId: number; value: number }
-  | { kind: Exclude<VoucherKind, 'Opening balance'>; lines: Line[] });
+  | { kind: Exclude<VoucherKind, 'Opening balance'>; lines: Line[]; payee?: Payee });
 export type ReverseVoucher = { requestId: string; day: string; memo: string; voucherId: number };
 export type Period = { from?: string; to?: string };
 export type DayBookQuery = Period & { page?: number };
@@ -37,6 +44,12 @@ export type ContractorLedger = Omit<Ledger, 'rows'> & {
   money: ContractorTotals;
   sites: (ContractorTotals & { siteId: number | null })[];
 };
+export type CashbookQuery = { accountId: number; to?: string; page?: number };
+export type CashbookLedger = Omit<Ledger, 'rows'> & {
+  cashbook: Cashbook;
+  totalCash: bigint;
+  rows: (Ledger['rows'][number] & { payee: VoucherPayee | null; offsets: string })[];
+};
 export type TrialBalance = { rows: (Account & { balance: bigint })[]; debit: bigint; credit: bigint };
 
 type BookOperations = {
@@ -46,6 +59,10 @@ type BookOperations = {
   saveContractor: [ContractorDetails, Account];
   removeContractor: [{ accountId: number }, { archived: boolean }];
   getContractorLedger: [LedgerQuery, ContractorLedger];
+  getCashbooks: [undefined, Cashbook[]];
+  createCashbook: [NewCashbook, Cashbook];
+  removeCashbook: [{ accountId: number }, { archived: boolean }];
+  getCashbookLedger: [CashbookQuery, CashbookLedger];
   postVoucher: [PostVoucher, VoucherDetail];
   reverseVoucher: [ReverseVoucher, VoucherDetail];
   getVoucher: [{ voucherId: number }, VoucherDetail];
@@ -56,6 +73,7 @@ type BookOperations = {
 
 export const BOOK_OPERATIONS = [
   'getChart', 'createAccount', 'getContractors', 'saveContractor', 'removeContractor', 'getContractorLedger',
+  'getCashbooks', 'createCashbook', 'removeCashbook', 'getCashbookLedger',
   'postVoucher', 'reverseVoucher', 'getVoucher', 'getDayBook', 'getLedger', 'getTrialBalance',
 ] as const satisfies readonly (keyof BookOperations)[];
 

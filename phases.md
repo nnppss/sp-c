@@ -10,7 +10,7 @@
 | 2. Firms | Verified | Firm details and the selected books survived an offline restart on Apple silicon. Unused firms can be deleted and referenced firms retain their history. |
 | 3. Vouchers and accounting core | Verified | Posted and reversed a ₹5,000.25 sample payment. The day book and trial balance led to the same voucher, and the fixture reconciled to ₹21,98,000 on each side. |
 | 4. Contractors | Verified | One ₹40,000 bank payment and a ₹2,000 cash return leave Anuj with ₹38,000 net given. Both sites open the original payment. |
-| 5. Cashbooks | Planned | Vikram’s cashbook reconciles money entrusted, spent, returned and still held. |
+| 5. Cashbooks | Verified | Vikram holds ₹2,500 after the handover, expense and return. Total firm cash fell only by the ₹6,500 expense. |
 | 6. Employees | Planned | Salary, advances and reimbursements can be followed separately from cash held for the firm. First accountant pilot. |
 | 7. Bank | Planned | The accountant can import a statement, match or post each row, and resume after restart. |
 | 8. Sale & Purchase | Planned | Printable GST invoices support bill payments and pre-tax allocations across firms. |
@@ -119,6 +119,7 @@ Use a sample workspace with two firms, issued invoices, contractor site splits a
 | 20 Nov 2026 | Phase 2 firms | Created Firm A and Firm B in a disposable Demo workspace, edited A, switched to B by keyboard and verified the saved selection and both firms’ details after relaunch. [Checks and platform coverage](#phase-2-verification) |
 | 20 Nov 2026 | Phase 3 vouchers and accounting core | Replayed the 40 prototype vouchers into SQLite and reconciled every account and site total. Posted a sample payment and followed it from the day book and trial balance through to the ledger and voucher. [Checks and platform coverage](#phase-3-verification) |
 | 20 Nov 2026 | Phase 4 contractors | Entered Anuj’s bank payment, site split, Bodla cash return and manual settlement from the keyboard. Verified shared assignments, voucher links, and archived history after restart. [Checks and platform coverage](#phase-4-verification) |
+| 20 Nov 2026 | Phase 5 cashbooks | Reconciled Vikram’s site cash and office cash by date. The cashbook showed Vikram as custodian and Vikram Enterprises as the payee firm. Verified source vouchers and the balance after an offline restart. [Checks and platform coverage](#phase-5-verification) |
 
 ### Reproduce the prototype baseline
 
@@ -154,3 +155,18 @@ The local package attempts used cached Electron archives via `--config.electronD
 - Assigning Ravi to Yamuna preserved Anuj’s totals. The smoke test searched by site and contractor name, restored the search and voucher focus with Back and Forward, and deleted Ravi’s unused record. A ₹30,000 settlement journal reduced Anuj’s ledger balance to ₹8,000 and kept net given at ₹38,000. The edited name and archived ledger persisted through offline restart and the journal still opened from the ledger.
 - `npm test` passed all ten tests, including site and firm validation, shared assignments, idempotent split payments, historical postings after site removal, and reversal of an archived contractor’s payment. `python3 -B scripts/capture-prototype.py --check` matched the 40-voucher baseline.
 - Phase 4 verification covered the development build on Apple silicon. Packaged macOS and Windows checks remain pending.
+
+### Phase 5 verification
+
+- `npm run test:desktop` passed on macOS 27.0 arm64 with Electron 45.3.2. The keyboard workflow used a disposable offline Demo profile and opened the books on 17 Nov 2026 with ₹20,000 in office cash and ₹0 in site cash. It used Enter and Shift+Tab to navigate forms, arrows to select accounts and the payee, Esc to cancel an entry, and Cmd+S to post.
+
+| Date | Entry | Office cash | Vikram’s site cash | Total firm cash |
+| --- | --- | ---: | ---: | ---: |
+| 17 Nov 2026 | Opening cash | ₹20,000 | ₹0 | ₹20,000 |
+| 18 Nov 2026 | ₹10,000 handed to Vikram | ₹10,000 | ₹10,000 | ₹20,000 |
+| 19 Nov 2026 | ₹6,500 paid to Vikram Enterprises for site supplies | ₹10,000 | ₹3,500 | ₹13,500 |
+| 20 Nov 2026 | ₹1,000 returned to office | ₹11,000 | ₹2,500 | ₹13,500 |
+
+- Both histories referenced the same contra vouchers. The 19 Nov as-of view showed ₹3,500 and opened the ₹6,500 payment. Back restored the date and voucher focus. Forward reopened the payment, which showed Vikram Enterprises and its owner Vikram. The cashbook identified Vikram as custodian. The ₹2,500 balance and payment link survived an offline relaunch.
+- `npm test` passed all 11 tests. The cashbook regression checked exact paise, posting dates, firm scope, duplicate saves, person and firm payees, reversals, archival with history and persistence. `python3 -B scripts/capture-prototype.py --check` matched the fixed-date 40-voucher baseline.
+- Phase 8 remains responsible for applying cash payments to invoices. Phase 5 package checks on macOS and Windows remain pending.

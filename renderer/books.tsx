@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 import type { Chart, DayBookQuery, LedgerQuery, Period, VoucherDetail } from '../desktop/books';
 import type { Firm, WorkspaceKind } from '../desktop/workspace';
-import { AccountEntry, accountLabels, errorMessage, money, ReversalEntry, VoucherEntry } from './book-entry';
+import { AccountEntry, accountLabels, errorMessage, money, payeeName, ReversalEntry, VoucherEntry } from './book-entry';
 
 export type BookView =
   | { name: 'chart'; saved?: boolean }
@@ -47,7 +47,7 @@ export function Table({ heading, headings, children, footer }: {
   </div>;
 }
 
-function Filters({ period, asOf, sites, siteId, apply }: {
+export function Filters({ period, asOf, sites, siteId, apply }: {
   period: Period; asOf?: boolean; sites?: Chart['sites']; siteId?: number;
   apply: (period: Period, siteId?: number) => void;
 }) {
@@ -229,6 +229,7 @@ export function Books({ workspace, firm, view, savedFocus, shortcut, open, repla
           </div>
           {screen.saved && <p role="status">{voucher.reversesId === null ? 'Voucher posted.' : 'Reversal posted.'}</p>}
           <p>{voucher.day}{voucher.memo && ' · ' + voucher.memo}</p>
+          {voucher.payee && <p>Payee {payeeName(voucher.payee)}</p>}
           {voucher.reversesId !== null && <p>Reverses <button className="book-link" id="original-voucher"
             onClick={() => showVoucher(voucher.reversesId!)}>voucher #{voucher.reversesId}</button></p>}
           {voucher.reversedById !== null && <p>Reversed by <button className="book-link" id="linked-reversal"

@@ -48,6 +48,8 @@ function WorkspaceShell({ kind, switchWorkspace }: { kind: WorkspaceKind; switch
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [transfer, setTransfer] = useState<'backup' | 'restore'>();
+  const [restores, setRestores] = useState(0);
   const changing = useRef(false);
   const availableFirms = workspace?.firms.filter(firm => !firm.archived) ?? [];
   const activeDemo = workspace?.demo && workspace.demo.firmId === workspace.activeFirmId ? workspace.demo : null;
@@ -164,15 +166,17 @@ function WorkspaceShell({ kind, switchWorkspace }: { kind: WorkspaceKind; switch
     setHistory({ entries: rememberFocus(), index: next });
   }
 
-  async function changeWorkspace(change: () => Promise<Workspace>) {
+  async function changeWorkspace(change: () => Promise<Workspace | null>) {
     if (changing.current || !workspace) return;
     changing.current = true;
     setError('');
     setSaving(true);
     try {
       const result = await change();
-      setWorkspace(result);
-      return result;
+      if (result) {
+        setWorkspace(result);
+        return result;
+      }
     } catch (error) {
       setError(error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': Error: /, '')
         : 'Could not update the workspace.');
@@ -192,6 +196,27 @@ function WorkspaceShell({ kind, switchWorkspace }: { kind: WorkspaceKind; switch
     }
   }
 
+  async function transferBooks(operation: 'backup' | 'restore') {
+    if (changing.current) return;
+    setNotice('');
+    setTransfer(operation);
+    try {
+      const restored = await changeWorkspace(async () => {
+        if (operation === 'restore') return window.workspaces.restore(kind);
+        if (await window.workspaces.backup(kind)) setNotice('Workspace backup saved.');
+        return null;
+      });
+      if (restored) {
+        setName(restored.name);
+        setRestores(count => count + 1);
+        setHistory({ entries: [{ page: 'Workspace settings', focus: 'restore-workspace' }], index: 0 });
+        setNotice(`Workspace restored. The previous books were saved as ${kind}.before-restore.sqlite3.`);
+      }
+    } finally {
+      setTransfer(undefined);
+    }
+  }
+
   function selectFirm(id: number) {
     if (id === workspace?.activeFirmId || changing.current) return;
     void changeWorkspace(() => window.workspaces.selectFirm(kind, id));
@@ -200,7 +225,7 @@ function WorkspaceShell({ kind, switchWorkspace }: { kind: WorkspaceKind; switch
 
   return (
     <div className="shell" onKeyDown={(event) => {
-      if (event.defaultPrevented || event.nativeEvent.isComposing) return;
+      if (transfer || event.defaultPrevented || event.nativeEvent.isComposing) return;
       const primary = window.workspaces.isMac ? event.metaKey : event.ctrlKey;
       const historyModifier = window.workspaces.isMac ? event.metaKey : event.altKey;
       const [back, forward] = window.workspaces.isMac ? ['[', ']'] : ['ArrowLeft', 'ArrowRight'];
@@ -217,7 +242,7 @@ function WorkspaceShell({ kind, switchWorkspace }: { kind: WorkspaceKind; switch
         document.querySelector<HTMLFormElement>(formId)?.requestSubmit();
       }
     }}>
-      <aside className="sidebar">
+      <aside className="sidebar" inert={Boolean(transfer)}>
         <div className="brand"><span className="monogram" aria-hidden="true">SP</span><div>SP &amp; Company<span>ACCOUNTS</span></div></div>
         <div className="workspace-picker" role="group" aria-label="Workspace">
           {WORKSPACES.map(key => (
@@ -231,7 +256,7 @@ function WorkspaceShell({ kind, switchWorkspace }: { kind: WorkspaceKind; switch
         </nav>
       </aside>
       <div className="workspace">
-        <header className="toolbar">
+        <header className="toolbar" inert={Boolean(transfer)}>
           <div className="history" role="group" aria-label="Page history">
             <button type="button" disabled={index === 0} onClick={() => move(-1)}>Back <kbd>{shortcuts.back}</kbd></button>
             <button type="button" disabled={index === entries.length - 1} onClick={() => move(1)}>Forward <kbd>{shortcuts.forward}</kbd></button>
@@ -272,20 +297,32 @@ function WorkspaceShell({ kind, switchWorkspace }: { kind: WorkspaceKind; switch
             </>
           )}
           {entry.page === 'Workspace settings' && workspace && (
-            <form id="settings-form" className="panel settings" onSubmit={save}>
-              <label htmlFor="workspace-name">Workspace name</label>
-              <input id="workspace-name" required maxLength={NAME_LIMIT} value={name} readOnly={saving}
-                onChange={(event) => { setName(event.target.value); setNotice(''); setError(''); }} />
-              <div className="form-actions">
-                <button type="submit" className="action" id="save-settings" disabled={saving}>{saving ? 'Saving…' : 'Save settings'}</button>
-                <kbd>{shortcuts.save}</kbd>
-                <span role="status">{notice}</span>
-              </div>
-            </form>
+            <>
+              <form id="settings-form" className="panel settings" onSubmit={save}>
+                <label htmlFor="workspace-name">Workspace name</label>
+                <input id="workspace-name" required maxLength={NAME_LIMIT} value={name} readOnly={saving}
+                  onChange={(event) => { setName(event.target.value); setNotice(''); setError(''); }} />
+                <div className="form-actions">
+                  <button type="submit" className="action" id="save-settings" disabled={saving}>{saving && !transfer ? 'Saving…' : 'Save settings'}</button>
+                  <kbd>{shortcuts.save}</kbd>
+                </div>
+              </form>
+              <section className="panel settings" aria-labelledby="backup-title">
+                <h2 id="backup-title">Backup and restore</h2>
+                <p>Save all firms and books in {labels[kind]}. Restoring a backup replaces this entire workspace.</p>
+                <div className="form-actions">
+                  <button type="button" className="action" id="save-backup" aria-disabled={saving}
+                    onClick={() => void transferBooks('backup')}>Save backup</button>
+                  <button type="button" className="secondary" id="restore-workspace" aria-disabled={saving}
+                    onClick={() => void transferBooks('restore')}>Restore backup</button>
+                </div>
+              </section>
+              <p role="status">{transfer === 'backup' ? 'Saving backup…' : transfer === 'restore' ? 'Restoring backup…' : notice}</p>
+            </>
           )}
           {workspace && (
             <section hidden={entry.page !== 'Firms'} aria-labelledby="page-title">
-              <Firms kind={kind} workspace={workspace} saving={saving} shortcut={shortcuts.save}
+              <Firms key={restores} kind={kind} workspace={workspace} saving={saving} shortcut={shortcuts.save}
                 changeWorkspace={changeWorkspace} openArchivedBooks={openArchivedBooks} />
             </section>
           )}

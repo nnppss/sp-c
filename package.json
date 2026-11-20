@@ -1,6 +1,6 @@
 {
   "name": "sp-company-accounts",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Offline accounting workspace for SP & Company",
   "author": "SP & Company",
@@ -12,6 +12,7 @@
     "test": "tsc -p tsconfig.desktop.json && vitest run",
     "test:desktop": "npm run build && node scripts/smoke-desktop.mjs .",
     "test:packaged": "node scripts/smoke-desktop.mjs",
+    "test:recovery": "node scripts/smoke-recovery.mjs",
     "package:mac": "npm run build && electron-builder --mac --arm64 --x64 --publish never",
     "package:win": "npm run build && electron-builder --win --x64 --publish never"
   },
@@ -36,6 +37,7 @@
     "productName": "SP Company Accounts",
     "directories": { "output": "release" },
     "files": ["dist/**", "fixtures/prototype-2026-11-20.json"],
+    "toolsets": { "nsis": "1.2.1" },
     "mac": { "target": "dmg", "category": "public.app-category.finance", "identity": "-" },
     "win": { "target": "nsis", "signAndEditExecutable": false },
     "artifactName": "${name}-${version}-${os}-${arch}.${ext}"

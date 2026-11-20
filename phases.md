@@ -15,7 +15,7 @@
 | 7. Bank | Verified | CSV and XLSX statement rows can be posted or matched, and pending rows survive restart. |
 | 8. Sale & Purchase | Verified | Issued GST invoices retain their original details. The ₹1,00,000 split purchase posts once and its cashbook payment reduces the payable. |
 | 9. Reports | Verified | Firm and date filters, source drill-down, print, PDF and CSV reconcile to the sample books. |
-| 10. Backup, restore and release | Planned | Packaged Mac and Windows apps can open and recover the same set of books. |
+| 10. Backup, restore and release | Blocked | Version 0.1.1 packages are built. Apple silicon recovery passed. Windows and Intel Mac runtime checks and accountant reconciliation are pending. |
 
 ## Build prompts
 
@@ -124,6 +124,7 @@ Use a sample workspace with two firms, issued invoices, contractor site splits a
 | 20 Nov 2026 | Phase 7 bank | Verified CSV and XLSX imports, both confirmation paths, overlapping exports and pending rows after offline restart. [Checks](#phase-7-verification) |
 | 20 Nov 2026 | Phase 8 sale and purchase | Issued split-GST and IGST invoices, applied a cashbook instalment and verified the original sale after a firm address change and offline restart. [Checks](#phase-8-verification) |
 | 20 Nov 2026 | Phase 9 reports | Reconciled the sample trial balance, balance sheet and outstanding bills, traced allocations and bank matches, and compared the print, PDF and CSV totals. [Checks](#phase-9-verification) |
+| 20 Nov 2026 | Phase 10 backup, restore and release | Built both macOS DMGs and the Windows x64 NSIS installer. Verified recovery and the full offline smoke from an installed Apple silicon copy. Windows installation and transfer, Intel Mac launch and accountant reconciliation remain open. [Artifacts and checks](#phase-10-verification) |
 
 ### Reproduce the prototype baseline
 
@@ -203,6 +204,21 @@ The local package attempts used cached Electron archives via `--config.electronD
 - The outstanding report showed the ₹1,18,000 supplier bill, ₹6,500 applied and ₹1,11,500 outstanding. The purchase register and GST summary showed ₹9,000 each of input CGST and SGST. The sales register showed ₹1,800 output IGST. The matched row in the archived firm’s bank reconciliation opened its original voucher, and pending rows remained visible. The SQLite regression also checked that a match is visible in a period ending before its voucher reversal.
 - Both allocation rows opened supplier invoice `VE-2026-8` in Firm A. The combined report counted the purchase pre-tax value once at ₹1,00,000, and the Firm B filter showed ₹40,000. Including the sale, the screen and printed/PDF copy showed ₹10,000 in sales, ₹1,00,000 in purchases and ₹1,10,000 combined. The CSV contained the same totals at two decimal places.
 - `npm test` passed all 16 tests, `npm run test:desktop` passed on Apple silicon, and `python3 -B scripts/capture-prototype.py --check` matched all 40 baseline vouchers. The desktop test captured the Print action through Electron’s PDF renderer and compared text with the saved PDF. Physical printer output, packaged builds and Windows and Intel Mac verification remain pending.
+
+### Phase 10 verification
+
+| Version 0.1.1 artifact | SHA-256 |
+| --- | --- |
+| [Apple silicon DMG](release/sp-company-accounts-0.1.1-mac-arm64.dmg) | `ef7762694eac6c780d2405433c5872403d8b1f7e83183a25bdb2a310df54880c` |
+| [Intel Mac DMG](release/sp-company-accounts-0.1.1-mac-x64.dmg) | `062553a02d7e558271dd4af3c91e0f12a54285d99cc02b81df80d46030ef13ca` |
+| [Windows x64 NSIS installer](release/sp-company-accounts-0.1.1-win-x64.exe) | `54af7985c5458559a0fce6774aa92123952464752bf2de92065ff8c9b62eb469` |
+
+- `npm test` passed all 20 tests. Backup included committed WAL data and excluded an uncommitted edit. A populated version 5 copy upgraded to version 6 with the same posting lines, issued invoices, allocations and part payment. The source copy stayed at version 5. A write lock blocked installation after validation and both the existing books and their recovery copy reopened. Invalid SQLite, unrelated schemas, future versions, wrong workspace types and foreign-key failures were rejected. The Python fixture check matched all 40 prototype vouchers.
+- macOS 27.0 arm64 with Electron 45.3.2 passed the development and installed-app smoke tests. Both DMGs passed `hdiutil verify`. The Apple silicon DMG mounted read-only and the app copied into a disposable Applications directory. The copied arm64 app and the x64 bundle passed strict code-signature verification. Both macOS builds use ad-hoc signing and lack notarization.
+- In the installed Apple silicon app, keyboard-driven backup and restore matched both firms’ account balances, complete issued invoice details, allocations, site totals, pending bank rows and active firm across offline restarts. Importing the saved transfer pair in a separate run gave the same results. Cancelling left the receiving workspace empty. A malformed backup preserved the sample books and the existing recovery file. Restoring the recovery copy and restarting reopened the prior empty workspace. The smoke supplied paths and responses to the native dialogs. Manual interaction with those dialogs remains pending because this session lacked computer-use permissions.
+- The Windows x64 NSIS build used the pinned ARM-compatible toolset on this Mac. 7-Zip tested the installer and embedded archive. Extracted files included the x64 Electron executable, the uninstaller and the current desktop, preload, worker, renderer and fixture in `app.asar`. The Windows installer is unsigned.
+- The November 2026 sample showed ₹1,88,000 trial debit and credit for Firm A and ₹11,800 on each side for Firm B. A’s bank closed at ₹30,000 and Anuj’s split was ₹30,000 for Yamuna and ₹10,000 for Bodla. Purchase `QA-P-001` totalled ₹1,18,000, with ₹60,000 and ₹40,000 of its pre-tax value allocated to A and B. B’s sale `QA-S-001` totalled ₹11,800. A’s ₹250 bank fee and ₹1,250 deposit remained pending. [Sample backup](release/qa/phase-10-sample.sqlite3) · [Expected results in paise](release/qa/phase-10-sample.json)
+- A Windows runner is needed to install and run the packaged smoke, restore the Mac sample, restart offline and compare the same records. An export from Windows must also be restored on Mac. An Intel Mac or Rosetta is needed for the x64 launch and recovery check. Accountant figures for November 2026 were unavailable, so reconciliation against the accountant’s figures remains open. [Install, recovery and transfer procedures](docs/BUILD.md#recovery-release-check)
 
 ### Daily-entry sample pilot
 

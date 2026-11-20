@@ -1,6 +1,6 @@
-import { mkdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
+import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, statSync } from 'node:fs';
+import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path';
+import { backup, DatabaseSync } from 'node:sqlite';
 import { parentPort, workerData } from 'node:worker_threads';
 import { accountingSchema, BookInputError, replayDemo, runAccountingCommand } from './accounting';
 import { getReport } from './reports';
@@ -8,7 +8,7 @@ import { indexPrototypeInvoices, invoiceSchema } from './invoice-schema';
 import type { BookCommand } from './books';
 import { StatementFileError } from './statement-file';
 import { FIRM_FIELDS, isWorkspaceKind, workspaceName } from './workspace';
-import type { Firm, FirmDetails, WorkerReply, Workspace, WorkspaceCommand, WorkspaceKind } from './workspace';
+import type { BackupCommand, Firm, FirmDetails, WorkerReply, WorkerResult, Workspace, WorkspaceCommand, WorkspaceKind } from './workspace';
 
 const migrations = [
   `CREATE TABLE workspace_settings (
@@ -76,6 +76,18 @@ const migrations = [
 ];
 
 class FirmInputError extends Error {}
+class BackupError extends Error {}
+
+function schemaVersion(db: DatabaseSync) {
+  return (db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version;
+}
+
+function applyMigrations(db: DatabaseSync, version: number, latest = migrations.length) {
+  for (let index = version; index < latest; index++) {
+    db.exec(migrations[index]);
+    db.exec(`PRAGMA user_version = ${index + 1}`);
+  }
+}
 
 export function openWorkspace(directory: string, kind: WorkspaceKind, fixture: string) {
   if (!isWorkspaceKind(kind)) throw new Error('Unknown workspace.');
@@ -84,12 +96,9 @@ export function openWorkspace(directory: string, kind: WorkspaceKind, fixture: s
   try {
     db.exec('PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
     db.exec('BEGIN IMMEDIATE');
-    const { user_version: version } = db.prepare('PRAGMA user_version').get() as { user_version: number };
+    const version = schemaVersion(db);
     if (version > migrations.length) throw new Error('This workspace needs a newer version of the app.');
-    for (let index = version; index < migrations.length; index++) {
-      db.exec(migrations[index]);
-      db.exec(`PRAGMA user_version = ${index + 1}`);
-    }
+    applyMigrations(db, version);
     db.prepare('INSERT OR IGNORE INTO workspace_settings VALUES (?, ?)').run(
       'name', kind === 'demo' ? 'SP & Company Demo' : 'SP & Company',
     );
@@ -114,6 +123,92 @@ export function openWorkspace(directory: string, kind: WorkspaceKind, fixture: s
   } catch (error) {
     db.close();
     throw error;
+  }
+}
+
+function removeStaging(directory: string) {
+  try {
+    rmSync(directory, { recursive: true, force: true });
+  } catch (error) {
+    console.error('Could not remove backup staging directory', directory, error);
+  }
+}
+
+function writeSnapshot(db: DatabaseSync, destination: string) {
+  const staging = mkdtempSync(join(dirname(destination), '.sp-backup-'));
+  try {
+    const snapshot = join(staging, 'snapshot.sqlite3');
+    db.prepare('VACUUM INTO ?').run(snapshot);
+    chmodSync(snapshot, 0o600);
+    renameSync(snapshot, destination);
+  } finally {
+    removeStaging(staging);
+  }
+}
+
+export function saveBackup(db: DatabaseSync, filename: string) {
+  const directory = realpathSync(dirname(db.location()!));
+  const destination = realpathSync(dirname(filename));
+  const offset = relative(directory.toLowerCase(), destination.toLowerCase());
+  if (offset !== '..' && !offset.startsWith('..' + sep) && !isAbsolute(offset)) {
+    throw new BackupError('Choose a backup location outside the app’s workspaces folder.');
+  }
+  writeSnapshot(db, join(destination, basename(filename)));
+}
+
+function checkIntegrity(db: DatabaseSync) {
+  const integrity = db.prepare('PRAGMA integrity_check(1)').get();
+  if (integrity?.integrity_check !== 'ok' || db.prepare('PRAGMA foreign_key_check').get()) {
+    throw new BackupError('The backup failed SQLite integrity checks.');
+  }
+}
+
+function validateBackup(filename: string, kind: WorkspaceKind) {
+  using db = new DatabaseSync(filename, { readOnly: true });
+  db.exec('PRAGMA trusted_schema = OFF');
+  const version = schemaVersion(db);
+  if (version > migrations.length) throw new BackupError('This backup needs a newer version of the app.');
+  if (db.prepare('PRAGMA journal_mode').get()?.journal_mode === 'wal') {
+    throw new BackupError('Choose a standalone backup made with Save backup.');
+  }
+  using expected = new DatabaseSync(':memory:');
+  applyMigrations(expected, 0, version);
+  const schema = 'SELECT type, name, tbl_name, sql FROM sqlite_schema ORDER BY name';
+  if (version < 1 || JSON.stringify(db.prepare(schema).all()) !== JSON.stringify(expected.prepare(schema).all())) {
+    throw new BackupError('The file does not have a supported workspace schema.');
+  }
+  checkIntegrity(db);
+  if (kind !== (db.prepare('SELECT 1 FROM demo_baseline WHERE id = 1').get() ? 'demo' : 'live')) {
+    throw new BackupError('Choose a backup made from the same Live or Demo workspace type.');
+  }
+}
+
+export async function restoreBackup(db: DatabaseSync, kind: WorkspaceKind, fixture: string, filename: string) {
+  const current = db.location()!;
+  const directory = dirname(current);
+  const staging = mkdtempSync(join(directory, '.sp-restore-'));
+  try {
+    let replacement: DatabaseSync;
+    try {
+      if (!statSync(filename).isFile()) throw new BackupError('Choose a SQLite workspace backup file.');
+      const stagedFile = join(staging, `${kind}.sqlite3`);
+      copyFileSync(filename, stagedFile);
+      validateBackup(stagedFile, kind);
+      replacement = openWorkspace(staging, kind, fixture);
+    } catch (error) {
+      if (error instanceof BackupError) throw error;
+      console.error(error);
+      throw new BackupError('The backup could not be opened or upgraded. The existing books are unchanged.');
+    }
+    using staged = replacement;
+    checkIntegrity(staged);
+    const workspace = readWorkspace(staged);
+    writeSnapshot(db, join(directory, `${kind}.before-restore.sqlite3`));
+    // SQLite commits the copy as one transaction, so interruption leaves a complete set of books.
+    await backup(staged, current);
+    return workspace;
+  } finally {
+    removeStaging(staging);
   }
 }
 
@@ -216,7 +311,8 @@ export function runBookCommand(db: DatabaseSync, command: BookCommand) {
 if (parentPort) {
   const port = parentPort;
   const databases = new Map<WorkspaceKind, DatabaseSync>();
-  port.on('message', ({ id, command }: { id: number; command: WorkspaceCommand | BookCommand }) => {
+  let queue = Promise.resolve();
+  async function respond({ id, command }: { id: number; command: BackupCommand | WorkspaceCommand | BookCommand }) {
     let reply: WorkerReply;
     try {
       const { kind } = command;
@@ -225,13 +321,28 @@ if (parentPort) {
         db = openWorkspace(workerData.directory, kind, workerData.fixture);
         databases.set(kind, db);
       }
-      reply = { id, result: 'firmId' in command ? runBookCommand(db, command) : runWorkspaceCommand(db, command) };
+      let result: WorkerResult;
+      if (command.operation === 'backup') {
+        saveBackup(db, command.filename);
+        result = true;
+      } else if (command.operation === 'restore') {
+        result = await restoreBackup(db, kind, workerData.fixture, command.filename);
+      } else {
+        result = 'firmId' in command ? runBookCommand(db, command) : runWorkspaceCommand(db, command);
+      }
+      reply = { id, result };
     } catch (error) {
-      const invalidInput = error instanceof FirmInputError || error instanceof BookInputError || error instanceof StatementFileError;
+      const invalidInput = error instanceof FirmInputError || error instanceof BookInputError ||
+        error instanceof StatementFileError || error instanceof BackupError;
       if (!invalidInput) console.error(error);
       reply = { id, error: invalidInput ? error.message
+        : command.operation === 'backup' ? 'The backup could not be saved. Check the destination and try again.'
+        : command.operation === 'restore' ? 'Restore could not finish. The existing books are unchanged.'
         : 'The workspace could not be accessed. Check its files and try again.' };
     }
     port.postMessage(reply);
+  }
+  port.on('message', (request: Parameters<typeof respond>[0]) => {
+    queue = queue.then(() => respond(request));
   });
 }

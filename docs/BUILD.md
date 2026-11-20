@@ -24,6 +24,15 @@ The fixture check compares the checked-in JSON with a fresh fixed-date Python se
 
 The same Electron command runs the daily-entry pilot, CSV/XLSX review, invoice entry and reporting workflows offline in disposable Demo books. It checks output through temporary PDF and CSV files. On macOS it also compares PDF text with the screen totals using the built-in PDFKit framework. See the [pilot worksheet](../phases.md#daily-entry-sample-pilot) for the entries and expected balances.
 
+## Back up and recover books
+
+1. Finish saving any open drafts. Select **Live** or **Demo**, open **Workspace settings** and choose **Save backup**. Save the `.sqlite3` file outside the app's workspaces folder. It contains every firm and all committed records in the selected workspace.
+2. To move books, copy that single file to the other computer and install the same or a newer app release. Open the matching **Live** or **Demo** workspace, then choose **Restore backup** in **Workspace settings**. Select the file and confirm **Restore**. This replaces all firms and records in that workspace.
+3. Wait for **Workspace restored**. Open **Firms** and confirm the selected firm. Open **Reports**, **Sale & Purchase**, **Contractors** and **Bank** to check your balances, issued invoices, allocations, site totals and pending rows. Quit and reopen the app offline to confirm the restored books persist.
+4. If restore reports an error, reopen the app and check the existing firm list and balances. For a valid restore, the app first saves the previous books as `live.before-restore.sqlite3` or `demo.before-restore.sqlite3` next to the workspace under `userData/workspaces`. To undo the restore, select that file in **Restore backup**. Copy it elsewhere first if you need to keep it across subsequent restores.
+
+The packaged app's default `userData` folder is `~/Library/Application Support/sp-company-accounts` on macOS or `%APPDATA%\sp-company-accounts` on Windows. If damaged books prevent the app from opening the workspace, quit the app fully and move the affected workspace database and any matching `-journal`, `-wal` and `-shm` files together into a separate folder. Keep those files and any recovery snapshot. Reopen the app to create a fresh workspace of the same type, then restore from a known-good backup. Copy the recovery snapshot outside the app's workspaces folder before attempting this recovery so the fresh workspace's recovery copy cannot replace it.
+
 ## Package and smoke-test
 
 ```sh
@@ -31,7 +40,10 @@ npm run package:mac
 npm run package:win
 ```
 
-Run the macOS build on macOS. It produces separate Apple silicon and Intel disk images in `release/`. Run the Windows build on Windows for an x64 NSIS installer. The phase tracker records artifacts and platform checks. [Phase tracker](../phases.md)
+Run the macOS build on macOS. It produces separate Apple silicon and Intel disk images in `release/`. The Windows build produces an x64 NSIS installer and uses the pinned multi-platform NSIS toolset. Test installation on Windows. The phase tracker records artifacts and completed checks. [Phase 10 verification](../phases.md#phase-10-verification)
+
+- On macOS, open the DMG for the machine's architecture, copy **SP Company Accounts.app** to Applications, then launch the copy. The package uses ad-hoc signing and macOS may require approval to open it. Eject the DMG after copying.
+- On Windows x64, launch `sp-company-accounts-0.1.1-win-x64.exe` and open **SP Company Accounts** from the Start menu. The installer is unsigned and Windows may show a reputation prompt. The default per-user executable is `%LOCALAPPDATA%\Programs\sp-company-accounts\SP Company Accounts.exe`.
 
 Use the built Electron executable to run the same smoke test against a package. For example, from the project root on macOS or Windows respectively:
 
@@ -43,7 +55,25 @@ npm run test:packaged -- "release/mac-arm64/SP Company Accounts.app/Contents/Mac
 npm run test:packaged -- ".\release\win-unpacked\SP Company Accounts.exe"
 ```
 
-To check an installer, mount the DMG or run the Windows installer first and pass the mounted or installed executable path. macOS builds use ad-hoc signing. Windows builds are unsigned. For a build that uses cached Electron archives, append `-- --config.electronDist=/path/to/archives` to the packaging command. Keep the original archive filenames and use the pinned Electron version.
+To check an installer, mount the DMG or run the Windows installer first and pass the mounted or installed executable path. For a build that uses cached Electron archives, append `-- --config.electronDist=/path/to/archives` to the packaging command. Keep the original archive filenames and use the pinned Electron version.
+
+### Recovery release check
+
+Run the recovery smoke with the installed executable. Run `npm run build` first if using `.` as the target for the development build. The smoke uses disposable profiles, blocks network access, exercises the settings buttons by keyboard, and supplies test paths and responses to the native dialogs. It compares both firms' account balances, issued invoices, allocations, site totals and pending rows after restore and an offline restart. It also checks that invalid input preserves the existing books and that the recovery copy can be restored.
+
+```sh
+npm run test:recovery -- "/Applications/SP Company Accounts.app/Contents/MacOS/SP Company Accounts" release/qa
+```
+
+Transfer `phase-10-sample.sqlite3` and `phase-10-sample.json` from the specified output folder to the Windows machine. After installing, run the packaged smoke and the recovery import with that same pair.
+
+```powershell
+$exe = "$env:LOCALAPPDATA\Programs\sp-company-accounts\SP Company Accounts.exe"
+npm run test:packaged -- "$exe"
+npm run test:recovery -- "$exe" "C:\path\to\qa" import
+```
+
+For the reverse check, run recovery on Windows with a new output folder and omit `import`. Transfer that pair back to macOS and run recovery there with `import`. To exercise the actual file pickers and confirmation prompts, repeat the backup and restore steps above with disposable workspaces and check the values in the phase tracker.
 
 ## Start the local backend
 

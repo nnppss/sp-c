@@ -997,11 +997,11 @@ try {
   await heading(page, 'SP & Company');
   assert.match(await page.locator('footer').innerText(), /Offline/);
   assert.deepEqual(await page.evaluate(() => ({ bridge: Object.keys(window.workspaces).sort(), require: typeof window.require })),
-    { bridge: ['applyBillPayment', 'confirmStatement', 'createAccount', 'createCashbook', 'getCashbookLedger', 'getCashbooks',
+    { bridge: ['applyBillPayment', 'backup', 'confirmStatement', 'createAccount', 'createCashbook', 'getCashbookLedger', 'getCashbooks',
       'getChart', 'getContractorLedger', 'getContractors', 'getDayBook', 'getEmployeeLedger', 'getInvoice', 'getInvoices', 'getLedger',
       'getNamedAccounts', 'getReport', 'getStatement', 'getStatementMatches', 'getStatements', 'getTrialBalance', 'getVoucher',
       'importStatement', 'isMac', 'output', 'postBank', 'postEmployee', 'postInvoice', 'postVoucher', 'previewStatement', 'read', 'removeCashbook',
-      'removeContractor', 'removeFirm', 'removeNamedAccount', 'reverseVoucher', 'saveCashbookCustodian', 'saveContractor',
+      'removeContractor', 'removeFirm', 'removeNamedAccount', 'restore', 'reverseVoucher', 'saveCashbookCustodian', 'saveContractor',
       'saveFirm', 'saveName', 'saveNamedAccount', 'selectFirm'], require: 'undefined' });
   assert.equal(await page.evaluate(() => window.workspaces.read('../live').then(() => false, () => true)), true);
   assert.equal(await page.evaluate(() => window.workspaces.saveName('live', '   ').then(() => false, () => true)), true);

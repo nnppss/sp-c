@@ -1,14 +1,14 @@
 import { mkdirSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { Worker } from 'node:worker_threads';
 import { app, BrowserWindow, dialog, ipcMain, Menu, session } from 'electron';
 import type { IpcMainInvokeEvent } from 'electron';
 import { BOOK_OPERATIONS } from './books';
-import type { BookCommand, BookResult } from './books';
+import type { BookCommand } from './books';
 import { CHANNELS, isWorkspaceKind, workspaceName } from './workspace';
-import type { WorkerReply, Workspace, WorkspaceCommand } from './workspace';
+import type { BackupCommand, WorkerReply, WorkerResult, WorkspaceCommand } from './workspace';
 
 const profile = app.commandLine.getSwitchValue('user-data-dir');
 if (profile) {
@@ -46,7 +46,7 @@ function bindWorkspace(directory: string) {
   const worker = new Worker(join(__dirname, 'database.js'), {
     workerData: { directory, fixture: join(app.getAppPath(), 'fixtures/prototype-2026-11-20.json') },
   });
-  const pending = new Map<number, { resolve: (result: Workspace | BookResult) => void; reject: (error: Error) => void }>();
+  const pending = new Map<number, { resolve: (result: WorkerResult) => void; reject: (error: Error) => void }>();
   let nextId = 0;
   let available = true;
   const unavailable = () => new Error('The database worker stopped. Reopen the app to retry.');
@@ -64,10 +64,10 @@ function bindWorkspace(directory: string) {
     pending.clear();
   });
 
-  function dispatch(command: WorkspaceCommand | BookCommand) {
+  function dispatch(command: BackupCommand | WorkspaceCommand | BookCommand) {
     if (!available) throw unavailable();
     const id = ++nextId;
-    return new Promise<Workspace | BookResult>((resolve, reject) => {
+    return new Promise<WorkerResult>((resolve, reject) => {
       pending.set(id, { resolve, reject });
       try {
         worker.postMessage({ id, command });
@@ -92,6 +92,33 @@ function bindWorkspace(directory: string) {
     if (!isWorkspaceKind(kind)) throw new Error('Unknown workspace.');
     return kind;
   }
+
+  const backupFilters = [{ name: 'SQLite workspace backup', extensions: ['sqlite3'] }];
+  ipcMain.handle(CHANNELS.backup, async (event, input: unknown) => {
+    const parent = requireWindow(event);
+    const kind = validateCaller(event, input);
+    const { canceled, filePath } = await dialog.showSaveDialog(parent, {
+      title: 'Save workspace backup', defaultPath: `${kind}-backup.sqlite3`, filters: backupFilters,
+    });
+    if (canceled || !filePath) return false;
+    return dispatch({ operation: 'backup', kind, filename: filePath });
+  });
+
+  ipcMain.handle(CHANNELS.restore, async (event, input: unknown) => {
+    const parent = requireWindow(event);
+    const kind = validateCaller(event, input);
+    const { canceled, filePaths: [filename] } = await dialog.showOpenDialog(parent, {
+      title: 'Choose workspace backup', filters: backupFilters, properties: ['openFile'],
+    });
+    if (canceled || !filename) return null;
+    const { response } = await dialog.showMessageBox(parent, {
+      type: 'warning', buttons: ['Cancel', 'Restore'], defaultId: 0, cancelId: 0,
+      message: `Replace the ${kind === 'live' ? 'Live' : 'Demo'} workspace?`,
+      detail: `Restore from ${basename(filename)}. This replaces all books in this workspace. A recovery copy of the current books will be saved first.`,
+    });
+    if (response !== 1) return null;
+    return dispatch({ operation: 'restore', kind, filename });
+  });
 
   ipcMain.handle('desktop:output', async (event, input: unknown) => {
     const parent = requireWindow(event);

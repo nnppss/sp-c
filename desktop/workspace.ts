@@ -25,6 +25,8 @@ export const CHANNELS = {
   saveFirm: 'workspace:save-firm',
   selectFirm: 'workspace:select-firm',
   removeFirm: 'workspace:remove-firm',
+  backup: 'workspace:backup',
+  restore: 'workspace:restore',
 } as const;
 
 export type WorkspaceCommand =
@@ -33,7 +35,11 @@ export type WorkspaceCommand =
   | { operation: 'saveFirm'; kind: WorkspaceKind; id: unknown; details: unknown }
   | { operation: 'selectFirm' | 'removeFirm'; kind: WorkspaceKind; id: unknown };
 
-export type WorkerReply = { id: number } & ({ result: Workspace | BookResult } | { error: string });
+export type BackupCommand =
+  | { operation: 'backup'; kind: WorkspaceKind; filename: string }
+  | { operation: 'restore'; kind: WorkspaceKind; filename: string };
+export type WorkerResult = Workspace | BookResult | true;
+export type WorkerReply = { id: number } & ({ result: WorkerResult } | { error: string });
 
 export type DesktopOutput = { kind: 'print' | 'pdf'; title: string } | { kind: 'csv'; title: string; csv: string };
 
@@ -43,6 +49,8 @@ export type WorkspaceBridge = BooksBridge & {
   saveFirm(kind: WorkspaceKind, id: number | null, details: FirmDetails): Promise<Workspace>;
   selectFirm(kind: WorkspaceKind, id: number): Promise<Workspace>;
   removeFirm(kind: WorkspaceKind, id: number): Promise<Workspace>;
+  backup(kind: WorkspaceKind): Promise<boolean>;
+  restore(kind: WorkspaceKind): Promise<Workspace | null>;
   output(input: DesktopOutput): Promise<boolean>;
   isMac: boolean;
 };

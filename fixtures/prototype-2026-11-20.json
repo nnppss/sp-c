@@ -1,0 +1,1423 @@
+{
+  "seedDate": "2026-11-20",
+  "firms": [
+    {
+      "id": 1,
+      "name": "SP & Company",
+      "owner": "Nikhil Singh",
+      "address": "Agra, Uttar Pradesh",
+      "gstin": "",
+      "demo": 1
+    }
+  ],
+  "accounts": [
+    {
+      "id": 22,
+      "firm": 1,
+      "kind": "party",
+      "name": "Aarav Developers",
+      "detail": {
+        "owner": "",
+        "number": "",
+        "ifsc": "",
+        "phone": "",
+        "role": "",
+        "address": "",
+        "gstin": ""
+      },
+      "archived": 0,
+      "system": null
+    },
+    {
+      "id": 23,
+      "firm": 1,
+      "kind": "party",
+      "name": "Agra Steel Traders",
+      "detail": {
+        "owner": "",
+        "number": "",
+        "ifsc": "",
+        "phone": "",
+        "role": "",
+        "address": "",
+        "gstin": ""
+      },
+      "archived": 0,
+      "system": null
+    },
+    {
+      "id": 17,
+      "firm": 1,
+      "kind": "contractor",
+      "name": "Anuj Kumar",
+      "detail": {
+        "owner": "",
+        "number": "",
+        "ifsc": "",
+        "phone": "",
+        "role": "Civil works",
+        "address": "",
+        "gstin": ""
+      },
+      "archived": 0,
+      "system": null
+    },
+    {
+      "id": 4,
+      "firm": 1,
+      "kind": "expense",
+      "name": "Contract work",
+      "detail": {},
+      "archived": 0,
+      "system": "work"
+    },
+    {
+      "id": 13,
+      "firm": 1,
+      "kind": "bank",
+      "name": "HDFC Bank",
+      "detail": {
+        "owner": "",
+        "number": "4821",
+        "ifsc": "",
+        "phone": "",
+        "role": "Current account",
+        "address": "",
+        "gstin": ""
+      },
+      "archived": 0,
+      "system": null
+    },
+    {
+      "id": 7,
+      "firm": 1,
+      "kind": "asset",
+      "name": "Input CGST",
+      "detail": {},
+      "archived": 0,
+      "system": "inCGST"
+    },
+    {
+      "id": 9,
+      "firm": 1,
+      "kind": "asset",
+      "name": "Input IGST",
+      "detail": {},
+      "archived": 0,
+      "system": "inIGST"
+    },
+    {
+      "id": 8,
+      "firm": 1,
+      "kind": "asset",
+      "name": "Input SGST",
+      "detail": {},
+      "archived": 0,
+      "system": "inSGST"
+    },
+    {
+      "id": 20,
+      "firm": 1,
+      "kind": "employee",
+      "name": "Meera Sharma",
+      "detail": {
+        "owner": "",
+        "number": "",
+        "ifsc": "",
+        "phone": "",
+        "role": "Accounts assistant",
+        "address": "",
+        "gstin": ""
+      },
+      "archived": 0,
+      "system": null
+    },
+    {
+      "id": 15,
+      "firm": 1,
+      "kind": "cash",
+      "name": "Office cashbook",
+      "detail": {
+        "owner": "Nikhil Singh",
+        "number": "",
+        "ifsc": "",
+        "phone": "",
+        "role": "",
+        "address": "",
+        "gstin": ""
+      },
+      "archived": 0,
+      "system": null
+    },
+    {
+      "id": 6,
+      "firm": 1,
+      "kind": "expense",
+      "name": "Office expenses",
+      "detail": {},
+      "archived": 0,
+      "system": "general"
+    },
+    {
+      "id": 1,
+      "firm": 1,
+      "kind": "equity",
+      "name": "Opening capital",
+      "detail": {},
+      "archived": 0,
+      "system": "capital"
+    },
+    {
+      "id": 10,
+      "firm": 1,
+      "kind": "liability",
+      "name": "Output CGST",
+      "detail": {},
+      "archived": 0,
+      "system": "outCGST"
+    },
+    {
+      "id": 12,
+      "firm": 1,
+      "kind": "liability",
+      "name": "Output IGST",
+      "detail": {},
+      "archived": 0,
+      "system": "outIGST"
+    },
+    {
+      "id": 11,
+      "firm": 1,
+      "kind": "liability",
+      "name": "Output SGST",
+      "detail": {},
+      "archived": 0,
+      "system": "outSGST"
+    },
+    {
+      "id": 3,
+      "firm": 1,
+      "kind": "expense",
+      "name": "Purchases",
+      "detail": {},
+      "archived": 0,
+      "system": "purchases"
+    },
+    {
+      "id": 18,
+      "firm": 1,
+      "kind": "contractor",
+      "name": "Ravi Constructions",
+      "detail": {
+        "owner": "",
+        "number": "",
+        "ifsc": "",
+        "phone": "",
+        "role": "Structural works",
+        "address": "",
+        "gstin": ""
+      },
+      "archived": 0,
+      "system": null
+    },
+    {
+      "id": 5,
+      "firm": 1,
+      "kind": "expense",
+      "name": "Salaries",
+      "detail": {},
+      "archived": 0,
+      "system": "salary"
+    },
+    {
+      "id": 2,
+      "firm": 1,
+      "kind": "income",
+      "name": "Sales revenue",
+      "detail": {},
+      "archived": 0,
+      "system": "sales"
+    },
+    {
+      "id": 19,
+      "firm": 1,
+      "kind": "contractor",
+      "name": "Sharma Electricals",
+      "detail": {
+        "owner": "",
+        "number": "",
+        "ifsc": "",
+        "phone": "",
+        "role": "Electrical works",
+        "address": "",
+        "gstin": ""
+      },
+      "archived": 0,
+      "system": null
+    },
+    {
+      "id": 16,
+      "firm": 1,
+      "kind": "cash",
+      "name": "Site cashbook",
+      "detail": {
+        "owner": "Vikram Sharma",
+        "number": "",
+        "ifsc": "",
+        "phone": "",
+        "role": "",
+        "address": "",
+        "gstin": ""
+      },
+      "archived": 0,
+      "system": null
+    },
+    {
+      "id": 14,
+      "firm": 1,
+      "kind": "bank",
+      "name": "State Bank of India",
+      "detail": {
+        "owner": "",
+        "number": "7630",
+        "ifsc": "",
+        "phone": "",
+        "role": "Current account",
+        "address": "",
+        "gstin": ""
+      },
+      "archived": 0,
+      "system": null
+    },
+    {
+      "id": 21,
+      "firm": 1,
+      "kind": "employee",
+      "name": "Vikram Sharma",
+      "detail": {
+        "owner": "",
+        "number": "",
+        "ifsc": "",
+        "phone": "",
+        "role": "Site supervisor",
+        "address": "",
+        "gstin": ""
+      },
+      "archived": 0,
+      "system": null
+    }
+  ],
+  "vouchers": [
+    {
+      "id": 40,
+      "day": "2026-11-20",
+      "kind": "Payment",
+      "memo": "Site advance · Yamuna",
+      "amount": 3000000,
+      "document": null,
+      "reverses": null,
+      "lines": [
+        {
+          "account": 17,
+          "site": 1,
+          "value": 3000000
+        },
+        {
+          "account": 13,
+          "site": 1,
+          "value": -3000000
+        }
+      ]
+    },
+    {
+      "id": 39,
+      "day": "2026-11-19",
+      "kind": "Receipt",
+      "memo": "Part payment · Aarav Developers",
+      "amount": 6500000,
+      "document": null,
+      "reverses": null,
+      "lines": [
+        {
+          "account": 13,
+          "site": null,
+          "value": 6500000
+        },
+        {
+          "account": 22,
+          "site": null,
+          "value": -6500000
+        }
+      ]
+    },
+    {
+      "id": 38,
+      "day": "2026-11-18",
+      "kind": "Payment",
+      "memo": "Site advance · Kargil",
+      "amount": 1250000,
+      "document": null,
+      "reverses": null,
+      "lines": [
+        {
+          "account": 18,
+          "site": 3,
+          "value": 1250000
+        },
+        {
+          "account": 13,
+          "site": 3,
+          "value": -1250000
+        }
+      ]
+    },
+    {
+      "id": 37,
+      "day": "2026-11-18",
+      "kind": "Payment",
+      "memo": "Site advance · Bodla",
+      "amount": 1000000,
+      "document": null,
+      "reverses": null,
+      "lines": [
+        {
+          "account": 17,
+          "site": 2,
+          "value": 1000000
+        },
+        {
+          "account": 15,
+          "site": 2,
+          "value": -1000000
+        }
+      ]
+    },
+    {
+      "id": 36,
+      "day": "2026-11-17",
+      "kind": "Work approved",
+      "memo": "Foundation work · Yamuna",
+      "amount": 4800000,
+      "document": null,
+      "reverses": null,
+      "lines": [
+        {
+          "account": 4,
+          "site": 1,
+          "value": 4800000
+        },
+        {
+          "account": 17,
+          "site": 1,
+          "value": -4800000
+        }
+      ]
+    },
+    {
+      "id": 35,
+      "day": "2026-11-16",
+      "kind": "Sale",
+      "memo": "Aarav Developers",
+      "amount": 11328000,
+      "document": {
+        "party_address": "",
+        "party_gstin": "",
+        "supply": "Uttar Pradesh",
+        "consumer": "",
+        "number": "SP-026",
+        "party": "Aarav Developers",
+        "firm": {
+          "id": 1,
+          "name": "SP & Company",
+          "owner": "Nikhil Singh",
+          "address": "Agra, Uttar Pradesh",
+          "gstin": "",
+          "demo": 1
+        },
+        "items": [
+          {
+            "description": "Site development works",
+            "qty": "3",
+            "rate": "32000",
+            "gst": "18",
+            "hsn": "",
+            "unit": "unit",
+            "base": 9600000,
+            "tax": {
+              "CGST": 864000,
+              "SGST": 864000
+            }
+          }
+        ],
+        "totals": {
+          "CGST": 864000,
+          "SGST": 864000,
+          "base": 9600000
+        },
+        "tax_mode": "split"
+      },
+      "reverses": null,
+      "lines": [
+        {
+          "account": 22,
+          "site": null,
+          "value": 11328000
+        },
+        {
+          "account": 2,
+          "site": null,
+          "value": -9600000
+        },
+        {
+          "account": 10,
+          "site": null,
+          "value": -864000
+        },
+        {
+          "account": 11,
+          "site": null,
+          "value": -864000
+        }
+      ]
+    },
+    {
+      "id": 34,
+      "day": "2026-11-16",
+      "kind": "Purchase",
+      "memo": "Agra Steel Traders",
+      "amount": 6372000,
+      "document": {
+        "party_address": "",
+        "party_gstin": "",
+        "supply": "Uttar Pradesh",
+        "consumer": "",
+        "number": "AST-218",
+        "party": "Agra Steel Traders",
+        "firm": {
+          "id": 1,
+          "name": "SP & Company",
+          "owner": "Nikhil Singh",
+          "address": "Agra, Uttar Pradesh",
+          "gstin": "",
+          "demo": 1
+        },
+        "items": [
+          {
+            "description": "Steel reinforcement bars",
+            "qty": "12",
+            "rate": "4500",
+            "gst": "18",
+            "hsn": "",
+            "unit": "unit",
+            "base": 5400000,
+            "tax": {
+              "CGST": 486000,
+              "SGST": 486000
+            }
+          }
+        ],
+        "totals": {
+          "CGST": 486000,
+          "SGST": 486000,
+          "base": 5400000
+        },
+        "tax_mode": "split"
+      },
+      "reverses": null,
+      "lines": [
+        {
+          "account": 23,
+          "site": null,
+          "value": -6372000
+        },
+        {
+          "account": 3,
+          "site": null,
+          "value": 5400000
+        },
+        {
+          "account": 7,
+          "site": null,
+          "value": 486000
+        },
+        {
+          "account": 8,
+          "site": null,
+          "value": 486000
+        }
+      ]
+    },
+    {
+      "id": 33,
+      "day": "2026-11-08",
+      "kind": "Payment",
+      "memo": "Salary payment · Meera Sharma",
+      "amount": 2400000,
+      "document": null,
+      "reverses": null,
+      "lines": [
+        {
+          "account": 20,
+          "site": null,
+          "value": 2400000
+        },
+        {
+          "account": 13,
+          "site": null,
+          "value": -2400000
+        }
+      ]
+    },
+    {
+      "id": 32,
+      "day": "2026-11-06",
+      "kind": "Salary earned",
+      "memo": "Monthly salary · Meera Sharma",
+      "amount": 2400000,
+      "document": null,
+      "reverses": null,
+      "lines": [
+        {
+          "account": 5,
+          "site": null,
+          "value": 2400000
+        },
+        {
+          "account": 20,
+          "site": null,
+          "value": -2400000
+        }
+      ]
+    },
+    {
+      "id": 31,
+      "day": "2026-11-04",
+      "kind": "Payment",
+      "memo": "Construction materials",
+      "amount": 16800000,
+      "document": null,
+      "reverses": null,
+      "lines": [
+        {
+          "account": 3,
+          "site": null,
+          "value": 16800000
+        },
+        {
+          "account": 13,
+          "site": null,
+          "value": -16800000
+        }
+      ]
+    },
+    {
+      "id": 30,
+      "day": "2026-11-02",
+      "kind": "Receipt",
+      "memo": "Site mobilisation receipt",
+      "amount": 32600000,
+      "document": null,
+      "reverses": null,
+      "lines": [
+        {
+          "account": 13,
+          "site": null,
+          "value": 32600000
+        },
+        {
+          "account": 2,
+          "site": null,
+          "value": -32600000
+        }
+      ]
+    },
+    {
+      "id": 29,
+      "day": "2026-10-10",
+      "kind": "Payment",
+      "memo": "Site expenses",
+      "amount": 600000,
+      "document": null,
+      "reverses": null,
+      "lines": [
+        {
+          "account": 6,
+          "site": null,
+          "value": 600000
+        },
+        {
+          "account": 13,
+          "site": null,
+          "value": -600000
+        }
+      ]
+    },
+    {
+      "id": 28,
+      "day": "2026-10-08",
+      "kind": "Payment",
+      "memo": "Salary payment · Meera Sharma",
+      "amount": 2400000,
+      "document": null,
+      "reverses": null,
+      "lines": [
+        {
+          "account": 20,
+          "site": null,
+          "value": 2400000
+        },
+        {
+          "account": 13,
+          "site": null,
+          "value": -2400000
+        }
+      ]
+    },
+    {
+      "id": 27,
+      "day": "2026-10-06",
+      "kind": "Salary earned",
+      "memo": "Monthly salary · Meera Sharma",
+      "amount": 2400000,
+      "document": null,
+      "reverses": null,
+      "lines": [
+        {
+          "account": 5,
+          "site": null,
+          "value": 2400000
+        },
+        {
+          "account": 20,
+          "site": null,
+          "value": -2400000
+        }
+      ]
+    },
+    {
+      "id": 26,
+      "day": "2026-10-04",
+      "kind": "Payment",
+      "memo": "Construction materials",
+      "amount": 12700000,
+      "document": null,
+      "reverses": null,
+      "lines": [
+        {
+          "account": 3,
+          "site": null,
+          "value": 12700000
+        },
+        {
+          "account": 13,
+          "site": null,
+          "value": -12700000
+        }
+      ]
+    },
+    {
+      "id": 25,
+      "day": "2026-10-02",
+      "kind": "Receipt",
+      "memo": "Site mobilisation receipt",
+      "amount": 25600000,
+      "document": null,
+      "reverses": null,
+      "lines": [
+        {
+          "account": 13,
+          "site": null,
+          "value": 25600000
+        },
+        {
+          "account": 2,
+          "site": null,
+          "value": -25600000
+        }
+      ]
+    },
+    {
+      "id": 24,
+      "day": "2026-09-10",
+      "kind": "Payment",
+      "memo": "Site expenses",
+      "amount": 600000,
+      "document": null,
+      "reverses": null,
+      "lines": [
+        {
+          "account": 6,
+          "site": null,
+          "value": 600000
+        },
+        {
+          "account": 13,
+          "site": null,
+          "value": -600000
+        }
+      ]
+    },
+    {
+      "id": 23,
+      "day": "2026-09-08",
+      "kind": "Payment",
+      "memo": "Salary payment · Meera Sharma",
+      "amount": 2400000,
+      "document": null,
+      "reverses": null,
+      "lines": [
+        {
+          "account": 20,
+          "site": null,
+          "value": 2400000
+        },
+        {
+          "account": 13,
+          "site": null,
+          "value": -2400000
+        }
+      ]
+    },
+    {
+      "id": 22,
+      "day": "2026-09-06",
+      "kind": "Salary earned",
+      "memo": "Monthly salary · Meera Sharma",
+      "amount": 2400000,
+      "document": null,
+      "reverses": null,
+      "lines": [
+        {
+          "account": 5,
+          "site": null,
+          "value": 2400000
+        },
+        {
+          "account": 20,
+          "site": null,
+          "value": -2400000
+        }
+      ]
+    },
+    {
+      "id": 21,
+      "day": "2026-09-04",
+      "kind": "Payment",
+      "memo": "Construction materials",
+      "amount": 15400000,
+      "document": null,
+      "reverses": null,
+      "lines": [
+        {
+          "account": 3,
+          "site": null,
+          "value": 15400000
+        },
+        {
+          "account": 13,
+          "site": null,
+          "value": -15400000
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "day": "2026-09-02",
+      "kind": "Receipt",
+      "memo": "Site mobilisation receipt",
+      "amount": 29500000,
+      "document": null,
+      "reverses": null,
+      "lines": [
+        {
+          "account": 13,
+          "site": null,
+          "value": 29500000
+        },
+        {
+          "account": 2,
+          "site": null,
+          "value": -29500000
+        }
+      ]
+    },
+    {
+      "id": 19,
+      "day": "2026-08-10",
+      "kind": "Payment",
+      "memo": "Site expenses",
+      "amount": 600000,
+      "document": null,
+      "reverses": null,
+      "lines": [
+        {
+          "account": 6,
+          "site": null,
+          "value": 600000
+        },
+        {
+          "account": 13,
+          "site": null,
+          "value": -600000
+        }
+      ]
+    },
+    {
+      "id": 18,
+      "day": "2026-08-08",
+      "kind": "Payment",
+      "memo": "Salary payment · Meera Sharma",
+      "amount": 2400000,
+      "document": null,
+      "reverses": null,
+      "lines": [
+        {
+          "account": 20,
+          "site": null,
+          "value": 2400000
+        },
+        {
+          "account": 13,
+          "site": null,
+          "value": -2400000
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "day": "2026-08-06",
+      "kind": "Salary earned",
+      "memo": "Monthly salary · Meera Sharma",
+      "amount": 2400000,
+      "document": null,
+      "reverses": null,
+      "lines": [
+        {
+          "account": 5,
+          "site": null,
+          "value": 2400000
+        },
+        {
+          "account": 20,
+          "site": null,
+          "value": -2400000
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "day": "2026-08-04",
+      "kind": "Payment",
+      "memo": "Construction materials",
+      "amount": 10200000,
+      "document": null,
+      "reverses": null,
+      "lines": [
+        {
+          "account": 3,
+          "site": null,
+          "value": 10200000
+        },
+        {
+          "account": 13,
+          "site": null,
+          "value": -10200000
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "day": "2026-08-02",
+      "kind": "Receipt",
+      "memo": "Site mobilisation receipt",
+      "amount": 18400000,
+      "document": null,
+      "reverses": null,
+      "lines": [
+        {
+          "account": 13,
+          "site": null,
+          "value": 18400000
+        },
+        {
+          "account": 2,
+          "site": null,
+          "value": -18400000
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "day": "2026-07-10",
+      "kind": "Payment",
+      "memo": "Site expenses",
+      "amount": 600000,
+      "document": null,
+      "reverses": null,
+      "lines": [
+        {
+          "account": 6,
+          "site": null,
+          "value": 600000
+        },
+        {
+          "account": 13,
+          "site": null,
+          "value": -600000
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "day": "2026-07-08",
+      "kind": "Payment",
+      "memo": "Salary payment · Meera Sharma",
+      "amount": 2400000,
+      "document": null,
+      "reverses": null,
+      "lines": [
+        {
+          "account": 20,
+          "site": null,
+          "value": 2400000
+        },
+        {
+          "account": 13,
+          "site": null,
+          "value": -2400000
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "day": "2026-07-06",
+      "kind": "Salary earned",
+      "memo": "Monthly salary · Meera Sharma",
+      "amount": 2400000,
+      "document": null,
+      "reverses": null,
+      "lines": [
+        {
+          "account": 5,
+          "site": null,
+          "value": 2400000
+        },
+        {
+          "account": 20,
+          "site": null,
+          "value": -2400000
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "day": "2026-07-04",
+      "kind": "Payment",
+      "memo": "Construction materials",
+      "amount": 11400000,
+      "document": null,
+      "reverses": null,
+      "lines": [
+        {
+          "account": 3,
+          "site": null,
+          "value": 11400000
+        },
+        {
+          "account": 13,
+          "site": null,
+          "value": -11400000
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "day": "2026-07-02",
+      "kind": "Receipt",
+      "memo": "Site mobilisation receipt",
+      "amount": 22500000,
+      "document": null,
+      "reverses": null,
+      "lines": [
+        {
+          "account": 13,
+          "site": null,
+          "value": 22500000
+        },
+        {
+          "account": 2,
+          "site": null,
+          "value": -22500000
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "day": "2026-06-10",
+      "kind": "Payment",
+      "memo": "Site expenses",
+      "amount": 600000,
+      "document": null,
+      "reverses": null,
+      "lines": [
+        {
+          "account": 6,
+          "site": null,
+          "value": 600000
+        },
+        {
+          "account": 13,
+          "site": null,
+          "value": -600000
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "day": "2026-06-08",
+      "kind": "Payment",
+      "memo": "Salary payment · Meera Sharma",
+      "amount": 2400000,
+      "document": null,
+      "reverses": null,
+      "lines": [
+        {
+          "account": 20,
+          "site": null,
+          "value": 2400000
+        },
+        {
+          "account": 13,
+          "site": null,
+          "value": -2400000
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "day": "2026-06-06",
+      "kind": "Salary earned",
+      "memo": "Monthly salary · Meera Sharma",
+      "amount": 2400000,
+      "document": null,
+      "reverses": null,
+      "lines": [
+        {
+          "account": 5,
+          "site": null,
+          "value": 2400000
+        },
+        {
+          "account": 20,
+          "site": null,
+          "value": -2400000
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "day": "2026-06-04",
+      "kind": "Payment",
+      "memo": "Construction materials",
+      "amount": 8500000,
+      "document": null,
+      "reverses": null,
+      "lines": [
+        {
+          "account": 3,
+          "site": null,
+          "value": 8500000
+        },
+        {
+          "account": 13,
+          "site": null,
+          "value": -8500000
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "day": "2026-06-02",
+      "kind": "Receipt",
+      "memo": "Site mobilisation receipt",
+      "amount": 16500000,
+      "document": null,
+      "reverses": null,
+      "lines": [
+        {
+          "account": 13,
+          "site": null,
+          "value": 16500000
+        },
+        {
+          "account": 2,
+          "site": null,
+          "value": -16500000
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "day": "2026-05-31",
+      "kind": "Opening balance",
+      "memo": "Opening funds",
+      "amount": 1400000,
+      "document": null,
+      "reverses": null,
+      "lines": [
+        {
+          "account": 16,
+          "site": null,
+          "value": 1400000
+        },
+        {
+          "account": 1,
+          "site": null,
+          "value": -1400000
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "day": "2026-05-31",
+      "kind": "Opening balance",
+      "memo": "Opening funds",
+      "amount": 3800000,
+      "document": null,
+      "reverses": null,
+      "lines": [
+        {
+          "account": 15,
+          "site": null,
+          "value": 3800000
+        },
+        {
+          "account": 1,
+          "site": null,
+          "value": -3800000
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "day": "2026-05-31",
+      "kind": "Opening balance",
+      "memo": "Opening funds",
+      "amount": 16500000,
+      "document": null,
+      "reverses": null,
+      "lines": [
+        {
+          "account": 14,
+          "site": null,
+          "value": 16500000
+        },
+        {
+          "account": 1,
+          "site": null,
+          "value": -16500000
+        }
+      ]
+    },
+    {
+      "id": 1,
+      "day": "2026-05-31",
+      "kind": "Opening balance",
+      "memo": "Opening funds",
+      "amount": 34500000,
+      "document": null,
+      "reverses": null,
+      "lines": [
+        {
+          "account": 13,
+          "site": null,
+          "value": 34500000
+        },
+        {
+          "account": 1,
+          "site": null,
+          "value": -34500000
+        }
+      ]
+    }
+  ],
+  "sites": [
+    {
+      "id": 2,
+      "firm": 1,
+      "name": "Bodla"
+    },
+    {
+      "id": 3,
+      "firm": 1,
+      "name": "Kargil"
+    },
+    {
+      "id": 1,
+      "firm": 1,
+      "name": "Yamuna"
+    }
+  ],
+  "assigned": [
+    {
+      "account": 17,
+      "site": 1
+    },
+    {
+      "account": 17,
+      "site": 2
+    },
+    {
+      "account": 17,
+      "site": 3
+    },
+    {
+      "account": 18,
+      "site": 1
+    },
+    {
+      "account": 18,
+      "site": 3
+    },
+    {
+      "account": 19,
+      "site": 2
+    }
+  ],
+  "statement": [],
+  "balances": [
+    {
+      "account": 1,
+      "value": -56200000
+    },
+    {
+      "account": 2,
+      "value": -154700000
+    },
+    {
+      "account": 3,
+      "value": 80400000
+    },
+    {
+      "account": 4,
+      "value": 4800000
+    },
+    {
+      "account": 5,
+      "value": 14400000
+    },
+    {
+      "account": 6,
+      "value": 3000000
+    },
+    {
+      "account": 7,
+      "value": 486000
+    },
+    {
+      "account": 8,
+      "value": 486000
+    },
+    {
+      "account": 9,
+      "value": 0
+    },
+    {
+      "account": 10,
+      "value": -864000
+    },
+    {
+      "account": 11,
+      "value": -864000
+    },
+    {
+      "account": 12,
+      "value": 0
+    },
+    {
+      "account": 13,
+      "value": 89450000
+    },
+    {
+      "account": 14,
+      "value": 16500000
+    },
+    {
+      "account": 15,
+      "value": 2800000
+    },
+    {
+      "account": 16,
+      "value": 1400000
+    },
+    {
+      "account": 17,
+      "value": -800000
+    },
+    {
+      "account": 18,
+      "value": 1250000
+    },
+    {
+      "account": 19,
+      "value": 0
+    },
+    {
+      "account": 20,
+      "value": 0
+    },
+    {
+      "account": 21,
+      "value": 0
+    },
+    {
+      "account": 22,
+      "value": 4828000
+    },
+    {
+      "account": 23,
+      "value": -6372000
+    }
+  ],
+  "siteBalances": [
+    {
+      "site": 1,
+      "account": 4,
+      "value": 4800000
+    },
+    {
+      "site": 1,
+      "account": 13,
+      "value": -3000000
+    },
+    {
+      "site": 1,
+      "account": 17,
+      "value": -1800000
+    },
+    {
+      "site": 2,
+      "account": 15,
+      "value": -1000000
+    },
+    {
+      "site": 2,
+      "account": 17,
+      "value": 1000000
+    },
+    {
+      "site": 3,
+      "account": 13,
+      "value": -1250000
+    },
+    {
+      "site": 3,
+      "account": 18,
+      "value": 1250000
+    }
+  ],
+  "trialBalance": {
+    "debit": 219800000,
+    "credit": 219800000
+  }
+}

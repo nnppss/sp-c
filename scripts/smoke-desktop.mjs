@@ -65,12 +65,105 @@ async function activeFirm(page, name) {
   }, name);
 }
 
+async function trialTotals(page, amount) {
+  const trial = page.getByRole('table', { name: 'Trial balance' });
+  await trial.waitFor();
+  assert.deepEqual(await trial.locator('tfoot td').allTextContents(), [amount, amount]);
+}
+
+async function exercisePayment(page, save, back, forward) {
+  await choosePage(page, 'Reports');
+  await trialTotals(page, '₹21,98,000');
+  await choosePage(page, 'Vouchers');
+  await pressButton(page, 'New voucher');
+  const type = page.getByLabel('Voucher type', { exact: true });
+  await type.waitFor();
+  assert.equal(await type.evaluate(input => input === document.activeElement), true);
+  assert.equal(await type.inputValue(), 'Payment');
+  await page.getByLabel('Voucher date').fill('2026-11-20');
+  await page.getByLabel('Narration', { exact: true }).focus();
+  await page.keyboard.type('Phase 3 sample payment');
+  await page.keyboard.press('Enter');
+  const debit = page.getByRole('group', { name: 'Line 1', exact: true });
+  const credit = page.getByRole('group', { name: 'Line 2', exact: true });
+  assert.equal(await debit.getByLabel('Account', { exact: true }).evaluate(input => input === document.activeElement), true);
+  await debit.getByLabel('Account', { exact: true }).selectOption({ label: 'Anuj Kumar · Contractor' });
+  await credit.getByLabel('Account', { exact: true }).selectOption({ label: 'HDFC Bank · Bank' });
+  for (const row of [debit, credit]) {
+    await row.getByLabel('Amount (₹)').fill('5000.25');
+    await row.getByLabel('Site', { exact: true }).selectOption({ label: 'Yamuna' });
+  }
+  await page.keyboard.press(save);
+  await page.getByText('Voucher posted.', { exact: true }).waitFor();
+  await page.getByRole('heading', { name: 'Payment #41', exact: true }).waitFor();
+  assert.deepEqual(await page.getByRole('table', { name: 'Posting lines' }).locator('tfoot td').allTextContents(), ['₹5,000.25', '₹5,000.25']);
+
+  await pressButton(page, 'Day book');
+  await pressButton(page, '#41');
+  await page.getByRole('heading', { name: 'Payment #41', exact: true }).waitFor();
+  await pressButton(page, 'Trial balance');
+  await trialTotals(page, '₹21,92,999.75');
+  await pressButton(page, 'Anuj Kumar');
+  await page.getByRole('heading', { name: 'Anuj Kumar ledger', exact: true }).waitFor();
+  await page.getByLabel('Site', { exact: true }).selectOption({ label: 'Yamuna' });
+  await pressButton(page, 'Apply filters');
+  await page.getByText('−₹12,999.75', { exact: true }).first().waitFor();
+  await pressButton(page, '#41');
+  await page.getByRole('heading', { name: 'Payment #41', exact: true }).waitFor();
+  await page.keyboard.press(back);
+  await page.getByRole('heading', { name: 'Anuj Kumar ledger', exact: true }).waitFor();
+  assert.equal(await page.getByLabel('Site', { exact: true }).inputValue(), '1');
+  assert.equal(await page.getByRole('button', { name: '#41', exact: true }).evaluate(button => button === document.activeElement), true);
+  await page.keyboard.press(forward);
+  await page.getByRole('heading', { name: 'Payment #41', exact: true }).waitFor();
+
+  await pressButton(page, 'Reverse voucher');
+  await page.getByLabel('Reversal date').fill('2026-11-21');
+  await page.getByLabel('Reversal reason').fill('Sample correction');
+  await page.keyboard.press(save);
+  await page.getByText('Reversal posted.', { exact: true }).waitFor();
+  await page.getByRole('heading', { name: 'Reversal #42', exact: true }).waitFor();
+  await pressButton(page, 'voucher #41');
+  await pressButton(page, 'voucher #42');
+  await page.getByRole('heading', { name: 'Reversal #42', exact: true }).waitFor();
+  await pressButton(page, 'Trial balance');
+  await trialTotals(page, '₹21,98,000');
+}
+
+async function exerciseOpening(page, save) {
+  await choosePage(page, 'Vouchers');
+  await page.getByText('No vouchers for this period.').waitFor();
+  await pressButton(page, 'Chart of accounts');
+  for (const [name, kind] of [['Firm A bank', 'bank'], ['Firm A cash', 'cash']]) {
+    await pressButton(page, 'New account');
+    const field = page.getByLabel('Account name', { exact: true });
+    await field.waitFor();
+    assert.equal(await field.evaluate(input => input === document.activeElement), true);
+    await page.keyboard.type(name);
+    await page.keyboard.press('Enter');
+    await page.getByLabel('Account type', { exact: true }).selectOption(kind);
+    await page.keyboard.press(save);
+    await page.getByText('Account saved.', { exact: true }).waitFor();
+  }
+  await pressButton(page, 'Day book');
+  await pressButton(page, 'New voucher');
+  await page.getByLabel('Voucher type').selectOption('Opening balance');
+  await page.getByLabel('Voucher date').fill('2026-11-20');
+  await page.getByLabel('Account', { exact: true }).selectOption({ label: 'Firm A bank · Bank' });
+  await page.getByLabel('Amount (₹)').fill('75.10');
+  await page.keyboard.press(save);
+  await page.getByText('Voucher posted.', { exact: true }).waitFor();
+  await pressButton(page, 'Trial balance');
+  await trialTotals(page, '₹75.10');
+}
+
 try {
   let page = await launch();
   await heading(page, 'SP & Company');
   assert.match(await page.locator('footer').innerText(), /Offline/);
   assert.deepEqual(await page.evaluate(() => ({ bridge: Object.keys(window.workspaces).sort(), require: typeof window.require })),
-    { bridge: ['isMac', 'read', 'removeFirm', 'saveFirm', 'saveName', 'selectFirm'], require: 'undefined' });
+    { bridge: ['createAccount', 'getChart', 'getDayBook', 'getLedger', 'getTrialBalance', 'getVoucher', 'isMac',
+      'postVoucher', 'read', 'removeFirm', 'reverseVoucher', 'saveFirm', 'saveName', 'selectFirm'], require: 'undefined' });
   assert.equal(await page.evaluate(() => window.workspaces.read('../live').then(() => false, () => true)), true);
   assert.equal(await page.evaluate(() => window.workspaces.saveName('live', '   ').then(() => false, () => true)), true);
   assert.equal(await page.getByText('Prototype vouchers').count(), 0);
@@ -101,6 +194,7 @@ try {
   await heading(page, 'SP & Company Demo');
   await page.getByText('Prototype vouchers').waitFor();
   assert.deepEqual(await page.locator('.balances dd').allTextContents(), ['40', '₹21,98,000', '₹21,98,000']);
+  await exercisePayment(page, save, back, forward);
   const demoName = await settings(page, 'SP & Company Demo');
   await demoName.fill('Training books');
   await page.keyboard.press(save);
@@ -151,6 +245,8 @@ try {
   assert.equal(await firmSwitcher.evaluate(select => select === document.activeElement), true);
   await page.keyboard.press('ArrowDown');
   await activeFirm(page, 'Firm A');
+  await exerciseOpening(page, save);
+  await firmSwitcher.focus();
   await page.keyboard.press('ArrowDown');
   await activeFirm(page, 'Firm B');
   await page.getByText('Prototype vouchers').waitFor({ state: 'hidden' });
@@ -187,8 +283,17 @@ try {
   await page.keyboard.press('Escape');
   await pressButton(page, 'Edit Firm A');
   await checkFirm(page, firmA);
+  await page.keyboard.press('Escape');
+  await pressButton(page, 'Edit SP & Company');
+  await pressButton(page, 'Open archived books');
+  await page.getByText('SP & Company · Archived books').waitFor();
+  assert.equal(await page.getByRole('button', { name: 'New voucher', exact: true }).count(), 0);
+  await pressButton(page, '#42');
+  await page.getByRole('heading', { name: 'Reversal #42', exact: true }).waitFor();
+  await pressButton(page, 'voucher #41');
+  await page.getByText('2026-11-20 · Phase 3 sample payment', { exact: true }).waitFor();
   assert.deepEqual((await readdir(join(profile, 'workspaces'))).filter(name => name.endsWith('.sqlite3')).sort(), ['demo.sqlite3', 'live.sqlite3']);
-  console.log('Desktop smoke passed: keyboard history and firm switching, restricted bridge, firm details and selection after offline restart, deletion and archive, and workspace isolation.');
+  console.log('Desktop smoke passed: offline workspace and firm persistence, keyboard account setup, opening balance, payment, day book and trial balance drill-down, ledger filter and focus restoration, and linked reversal after restart.');
 } finally {
   try {
     if (app) await app.close();

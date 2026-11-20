@@ -1,3 +1,5 @@
+import type { BooksBridge, BookResult } from './books';
+
 export const WORKSPACES = ['live', 'demo'] as const;
 export const NAME_LIMIT = 80;
 export const FIRM_FIELDS = {
@@ -31,9 +33,9 @@ export type WorkspaceCommand =
   | { operation: 'saveFirm'; kind: WorkspaceKind; id: unknown; details: unknown }
   | { operation: 'selectFirm' | 'removeFirm'; kind: WorkspaceKind; id: unknown };
 
-export type WorkerReply = { id: number } & ({ workspace: Workspace } | { error: string });
+export type WorkerReply = { id: number } & ({ result: Workspace | BookResult } | { error: string });
 
-export type WorkspaceBridge = {
+export type WorkspaceBridge = BooksBridge & {
   read(kind: WorkspaceKind): Promise<Workspace>;
   saveName(kind: WorkspaceKind, name: string): Promise<Workspace>;
   saveFirm(kind: WorkspaceKind, id: number | null, details: FirmDetails): Promise<Workspace>;

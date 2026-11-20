@@ -90,3 +90,34 @@ h1:focus { outline: none; }
 .error { color: #963422; }
 footer { border-top: 1px solid var(--line); color: var(--muted); font-size: .76rem; }
 .offline-dot { width: 7px; height: 7px; border-radius: 50%; background: #34815a; }
+
+.books { margin-top: 22px; }
+.book-tabs, .book-heading, .book-filters, .book-pagination { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.book-tabs { margin-bottom: 21px; }
+.book-tabs button[aria-pressed="true"] { background: #e1eee2; border-color: #638471; font-weight: 700; }
+.book-heading { justify-content: space-between; }
+.books h2 { font: 1.45rem Georgia, serif; margin: 0 0 12px; overflow-wrap: anywhere; }
+.book-heading h2 { margin: 0; }
+.book-heading { margin-bottom: 12px; }
+.book-filters, .book-pagination { margin: 15px 0; }
+.book-filters label { display: block; margin-bottom: 5px; color: var(--muted); font-size: .83rem; font-weight: 650; }
+.book-filters { align-items: end; }
+.book-filters input, .books select { padding: 7px; min-width: 0; color: inherit; background: white; border: 1px solid #9aac9e; border-radius: 5px; }
+.book-table { overflow-x: auto; margin-top: 12px; }
+.book-table table { border-collapse: collapse; width: 100%; font-size: .86rem; }
+.book-table th, .book-table td { padding: 9px 12px; text-align: left; border-bottom: 1px solid var(--line); }
+.book-table thead, .book-table tfoot { background: #edf3ea; }
+.book-table tbody th { font-weight: 500; }
+.book-table tbody tr:last-child > *, .book-table tfoot td { border-bottom: 0; }
+.book-table tfoot > tr > * { border-top: 1px solid var(--line); font-weight: 700; }
+.book-table .book-amount { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.book-link { background: none; border: 0; padding: 2px 0; color: var(--green); text-align: left; text-decoration: underline; overflow-wrap: anywhere; }
+.book-form { max-width: 650px; }
+.book-form fieldset { min-width: 0; border: 0; padding: 0; margin: 0; }
+.book-form select { display: block; width: 100%; margin-bottom: 16px; }
+.book-form .form-actions { margin-top: 12px; }
+.book-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 0 10px; }
+.book-form .posting-row { border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; margin-bottom: 14px; }
+.posting-row legend { padding: 0 4px; color: var(--muted); font-size: .83rem; font-weight: 650; }
+.posting-row input, .posting-row select { margin-bottom: 8px; }
+.book-balances { max-width: 460px; }

@@ -3,6 +3,8 @@ import type { FormEvent } from 'react';
 import { createRoot } from 'react-dom/client';
 import { NAME_LIMIT, WORKSPACES, workspaceName } from '../desktop/workspace';
 import type { Workspace, WorkspaceBridge, WorkspaceKind } from '../desktop/workspace';
+import { Books, DAY_BOOK, TRIAL_BALANCE } from './books';
+import type { BookView } from './books';
 import { DemoBalances, Firms } from './firms';
 import './style.css';
 
@@ -12,7 +14,10 @@ declare global {
 
 const PAGES = ['Overview', 'Firms', 'Vouchers', 'Contractors', 'Cashbooks', 'Employees', 'Bank', 'Sale & Purchase', 'Reports', 'Workspace settings'] as const;
 type Page = (typeof PAGES)[number];
-type Entry = { page: Page; focus?: string; selection?: [number, number] };
+type Entry = {
+  page: Page; focus?: string; selection?: [number, number];
+  book?: BookView; bookFirmId?: number; archivedFirmId?: number;
+};
 const labels = { live: 'Live', demo: 'Demo' };
 const shortcuts = window.workspaces.isMac
   ? { back: '⌘ [', forward: '⌘ ]', save: '⌘ S' }
@@ -31,6 +36,10 @@ function WorkspaceShell({ kind, switchWorkspace }: { kind: WorkspaceKind; switch
   const changing = useRef(false);
   const availableFirms = workspace?.firms.filter(firm => !firm.archived) ?? [];
   const activeDemo = workspace?.demo && workspace.demo.firmId === workspace.activeFirmId ? workspace.demo : null;
+  const booksPage = entry.page === 'Vouchers' || entry.page === 'Reports';
+  const bookFirm = workspace?.firms.find(firm => firm.id === (entry.archivedFirmId ?? workspace.activeFirmId));
+  const bookView = entry.bookFirmId === bookFirm?.id && entry.book ? entry.book
+    : entry.page === 'Reports' ? TRIAL_BALANCE : DAY_BOOK;
 
   useEffect(() => {
     let active = true;
@@ -54,7 +63,7 @@ function WorkspaceShell({ kind, switchWorkspace }: { kind: WorkspaceKind; switch
 
   function rememberFocus() {
     const target = document.getElementById(focus.current);
-    const saved: Entry = { page: entry.page, focus: target?.id };
+    const saved: Entry = { ...entry, focus: target?.id, selection: undefined };
     if ((target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) &&
         target.selectionStart !== null && target.selectionEnd !== null) {
       saved.selection = [target.selectionStart, target.selectionEnd];
@@ -63,8 +72,19 @@ function WorkspaceShell({ kind, switchWorkspace }: { kind: WorkspaceKind; switch
   }
 
   function navigate(page: Page) {
-    if (page === entry.page) return;
+    if (page === entry.page && !entry.archivedFirmId) return;
     setHistory({ entries: [...rememberFocus().slice(0, index + 1), { page }], index: index + 1 });
+  }
+
+  function openBook(view: BookView, replace = false) {
+    const next = { page: entry.page, book: view, bookFirmId: bookFirm?.id, archivedFirmId: entry.archivedFirmId };
+    if (replace) setHistory({ entries: entries.map((item, position) => position === index ? next : item), index });
+    else setHistory({ entries: [...rememberFocus().slice(0, index + 1), next], index: index + 1 });
+  }
+
+  function openArchivedBooks(firmId: number) {
+    const next: Entry = { page: 'Vouchers', archivedFirmId: firmId };
+    setHistory({ entries: [...rememberFocus().slice(0, index + 1), next], index: index + 1 });
   }
 
   function move(offset: number) {
@@ -102,7 +122,9 @@ function WorkspaceShell({ kind, switchWorkspace }: { kind: WorkspaceKind; switch
   }
 
   function selectFirm(id: number) {
-    if (id !== workspace?.activeFirmId) void changeWorkspace(() => window.workspaces.selectFirm(kind, id));
+    if (id === workspace?.activeFirmId || changing.current) return;
+    void changeWorkspace(() => window.workspaces.selectFirm(kind, id));
+    if (entry.archivedFirmId) navigate(entry.page);
   }
 
   return (
@@ -115,9 +137,9 @@ function WorkspaceShell({ kind, switchWorkspace }: { kind: WorkspaceKind; switch
         event.preventDefault();
         move(event.key === back ? -1 : 1);
       } else if (primary && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 's' &&
-          (entry.page === 'Workspace settings' || entry.page === 'Firms')) {
+          (entry.page === 'Workspace settings' || entry.page === 'Firms' || booksPage)) {
         event.preventDefault();
-        const formId = entry.page === 'Firms' ? '#firm-form' : '#settings-form';
+        const formId = booksPage ? '#book-form' : entry.page === 'Firms' ? '#firm-form' : '#settings-form';
         document.querySelector<HTMLFormElement>(formId)?.requestSubmit();
       }
     }}>
@@ -189,11 +211,16 @@ function WorkspaceShell({ kind, switchWorkspace }: { kind: WorkspaceKind; switch
           )}
           {workspace && (
             <section hidden={entry.page !== 'Firms'} aria-labelledby="page-title">
-              <Firms kind={kind} workspace={workspace} saving={saving} shortcut={shortcuts.save} changeWorkspace={changeWorkspace} />
+              <Firms kind={kind} workspace={workspace} saving={saving} shortcut={shortcuts.save}
+                changeWorkspace={changeWorkspace} openArchivedBooks={openArchivedBooks} />
             </section>
           )}
-          {(entry.page === 'Workspace settings' || entry.page === 'Firms') && !workspace && !error && <p role="status">Opening workspace…</p>}
-          {entry.page !== 'Overview' && entry.page !== 'Workspace settings' && entry.page !== 'Firms' && (
+          {booksPage && workspace && (bookFirm
+            ? <Books key={bookFirm.id} workspace={kind} firm={bookFirm} view={bookView} savedFocus={entry.focus}
+                shortcut={shortcuts.save} open={view => openBook(view)} replace={view => openBook(view, true)} back={() => move(-1)} />
+            : <p className="intro">Create or select a firm to open its books.</p>)}
+          {(entry.page === 'Workspace settings' || entry.page === 'Firms' || booksPage) && !workspace && !error && <p role="status">Opening workspace…</p>}
+          {!booksPage && entry.page !== 'Overview' && entry.page !== 'Workspace settings' && entry.page !== 'Firms' && (
             <p className="intro">This module is awaiting implementation.</p>
           )}
         </main>

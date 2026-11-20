@@ -2,6 +2,8 @@ import { mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { parentPort, workerData } from 'node:worker_threads';
+import { accountingSchema, BookInputError, replayDemo, runAccountingCommand } from './accounting';
+import type { BookCommand } from './books';
 import { FIRM_FIELDS, isWorkspaceKind, workspaceName } from './workspace';
 import type { Firm, FirmDetails, WorkerReply, Workspace, WorkspaceCommand, WorkspaceKind } from './workspace';
 
@@ -28,6 +30,7 @@ const migrations = [
    ) STRICT;
    INSERT INTO active_firm (id) VALUES (1);
    ALTER TABLE demo_baseline ADD COLUMN firm_id INTEGER REFERENCES firms(id) ON DELETE RESTRICT;`,
+  accountingSchema,
 ];
 
 class FirmInputError extends Error {}
@@ -57,6 +60,11 @@ export function openWorkspace(directory: string, kind: WorkspaceKind, fixture: s
         FROM (SELECT json_extract(?, '$.firms[0]') AS firm)`).run(snapshot);
       db.prepare(`INSERT INTO demo_baseline (id, snapshot, firm_id) VALUES (1, ?, ?)
         ON CONFLICT(id) DO UPDATE SET firm_id = excluded.firm_id`).run(snapshot, lastInsertRowid);
+    }
+    if (kind === 'demo' && version < 3) {
+      const { firmId, snapshot } = db.prepare('SELECT firm_id AS firmId, snapshot FROM demo_baseline WHERE id = 1')
+        .get() as { firmId: number; snapshot: string };
+      replayDemo(db, firmId, snapshot);
     }
     db.exec('COMMIT');
     return db;
@@ -157,10 +165,14 @@ export function runWorkspaceCommand(db: DatabaseSync, command: WorkspaceCommand)
   return readWorkspace(db);
 }
 
+export function runBookCommand(db: DatabaseSync, command: BookCommand) {
+  return runAccountingCommand(db, requireFirm(db, command.firmId), command);
+}
+
 if (parentPort) {
   const port = parentPort;
   const databases = new Map<WorkspaceKind, DatabaseSync>();
-  port.on('message', ({ id, command }: { id: number; command: WorkspaceCommand }) => {
+  port.on('message', ({ id, command }: { id: number; command: WorkspaceCommand | BookCommand }) => {
     let reply: WorkerReply;
     try {
       const { kind } = command;
@@ -169,10 +181,11 @@ if (parentPort) {
         db = openWorkspace(workerData.directory, kind, workerData.fixture);
         databases.set(kind, db);
       }
-      reply = { id, workspace: runWorkspaceCommand(db, command) };
+      reply = { id, result: 'firmId' in command ? runBookCommand(db, command) : runWorkspaceCommand(db, command) };
     } catch (error) {
-      if (!(error instanceof FirmInputError)) console.error(error);
-      reply = { id, error: error instanceof FirmInputError ? error.message
+      const invalidInput = error instanceof FirmInputError || error instanceof BookInputError;
+      if (!invalidInput) console.error(error);
+      reply = { id, error: invalidInput ? error.message
         : 'The workspace could not be accessed. Check its files and try again.' };
     }
     port.postMessage(reply);

@@ -4,6 +4,8 @@ import { pathToFileURL } from 'node:url';
 import { Worker } from 'node:worker_threads';
 import { app, BrowserWindow, ipcMain, Menu, session } from 'electron';
 import type { IpcMainInvokeEvent } from 'electron';
+import { BOOK_OPERATIONS } from './books';
+import type { BookCommand, BookResult } from './books';
 import { CHANNELS, isWorkspaceKind, workspaceName } from './workspace';
 import type { WorkerReply, Workspace, WorkspaceCommand } from './workspace';
 
@@ -43,7 +45,7 @@ function bindWorkspace(directory: string) {
   const worker = new Worker(join(__dirname, 'database.js'), {
     workerData: { directory, fixture: join(app.getAppPath(), 'fixtures/prototype-2026-11-20.json') },
   });
-  const pending = new Map<number, { resolve: (workspace: Workspace) => void; reject: (error: Error) => void }>();
+  const pending = new Map<number, { resolve: (result: Workspace | BookResult) => void; reject: (error: Error) => void }>();
   let nextId = 0;
   let available = true;
   const unavailable = () => new Error('The database worker stopped. Reopen the app to retry.');
@@ -52,7 +54,7 @@ function bindWorkspace(directory: string) {
     const request = pending.get(reply.id);
     pending.delete(reply.id);
     if ('error' in reply) request?.reject(new Error(reply.error));
-    else request?.resolve(reply.workspace);
+    else request?.resolve(reply.result);
   });
   worker.on('error', console.error);
   worker.on('exit', () => {
@@ -61,10 +63,10 @@ function bindWorkspace(directory: string) {
     pending.clear();
   });
 
-  function dispatch(command: WorkspaceCommand) {
+  function dispatch(command: WorkspaceCommand | BookCommand) {
     if (!available) throw unavailable();
     const id = ++nextId;
-    return new Promise<Workspace>((resolve, reject) => {
+    return new Promise<Workspace | BookResult>((resolve, reject) => {
       pending.set(id, { resolve, reject });
       try {
         worker.postMessage({ id, command });
@@ -100,6 +102,11 @@ function bindWorkspace(directory: string) {
   ipcMain.handle(CHANNELS.removeFirm, (event, kind: unknown, id: unknown) => (
     dispatch({ operation: 'removeFirm', kind: validateCaller(event, kind), id })
   ));
+  for (const operation of BOOK_OPERATIONS) {
+    ipcMain.handle('books:' + operation, (event, kind: unknown, firmId: unknown, input: unknown) => (
+      dispatch({ operation, kind: validateCaller(event, kind), firmId, input })
+    ));
+  }
 }
 
 if (!app.requestSingleInstanceLock()) {

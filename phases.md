@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | 1. Desktop foundation | Blocked | Verified offline restart and workspace isolation on Apple silicon. Intel Mac launch and Windows installer and launch checks need platform runners. |
 | 2. Firms | Verified | Firm details and the selected books survived an offline restart on Apple silicon. Unused firms can be deleted and referenced firms retain their history. |
-| 3. Vouchers and accounting core | Planned | A posted voucher can be opened from the day book, account ledger and trial balance. |
+| 3. Vouchers and accounting core | Verified | Posted and reversed a ₹5,000.25 sample payment. The day book and trial balance led to the same voucher, and the fixture reconciled to ₹21,98,000 on each side. |
 | 4. Contractors | Planned | A single bank payment can be split across sites and traced back from Anuj’s ledger. |
 | 5. Cashbooks | Planned | Vikram’s cashbook reconciles money entrusted, spent, returned and still held. |
 | 6. Employees | Planned | Salary, advances and reimbursements can be followed separately from cash held for the firm. First accountant pilot. |
@@ -117,6 +117,7 @@ Use a sample workspace with two firms, issued invoices, contractor site splits a
 | 20 Nov 2026 | Prototype ledger check | With the seed date fixed at 20 Nov 2026, all 40 vouchers balanced individually. Closing debit and credit balances each totalled ₹21,98,000. The saved sale totalled ₹1,13,280 and the purchase ₹63,720. This checks the sample ledger. Desktop implementation awaits the module acceptance checks. |
 | 20 Nov 2026 | Phase 1 desktop foundation | Captured all 40 vouchers, postings, site assignments, balances and the two invoice snapshots. The Electron app opens separate Live and Demo SQLite files through a worker. Keyboard navigation and offline restart passed in development and from the mounted Apple silicon DMG. [Commands and platform results](#phase-1-verification) |
 | 20 Nov 2026 | Phase 2 firms | Created Firm A and Firm B in a disposable Demo workspace, edited A, switched to B by keyboard and verified the saved selection and both firms’ details after relaunch. [Checks and platform coverage](#phase-2-verification) |
+| 20 Nov 2026 | Phase 3 vouchers and accounting core | Replayed the 40 prototype vouchers into SQLite and reconciled every account and site total. Posted a sample payment and followed it from the day book and trial balance through to the ledger and voucher. [Checks and platform coverage](#phase-3-verification) |
 
 ### Reproduce the prototype baseline
 
@@ -138,3 +139,10 @@ The local package attempts used cached Electron archives via `--config.electronD
 - `npm test` passed all five checks. The Firms regressions cover a populated version 1 upgrade, persisted selection, stable firm IDs, deletion of unused firms, and preservation of references and the demo snapshot when a firm is archived.
 - `npm run test:desktop` built the app and passed on macOS 27.0 arm64 with Electron 45.3.2. The smoke test created Firm A and Firm B with different owners, addresses and GSTINs, edited A, tabbed to the switcher and selected B using the arrow keys. The demo totals stayed with their original firm. The test deleted an unused firm, archived the original seeded firm and checked its retained voucher count and both trial balance totals. After an offline relaunch, the Demo workspace restored Firm B as active and both firms’ saved details matched. Live had no firms in the test profile.
 - Phase 2 verification covered the development build on Apple silicon. Packaged Phase 2 builds, Intel Mac and Windows were outside this run. The Phase 1 platform checks above remain pending.
+
+### Phase 3 verification
+
+- `python3 -B scripts/capture-prototype.py --check` matched the fixed-date fixture. `npm test` passed all nine tests. The desktop ledger replay matched all 40 vouchers and their posting lines, all 23 account balances, all seven site-by-account totals and both invoice snapshots. The trial balance totals were ₹21,98,000 debit and ₹21,98,000 credit.
+- The tests covered opening balances, payments, receipts, contra transfers, journals, and linked reversals. They rejected unbalanced lines, fractional paise, unassigned contractor sites and cross-firm accounts, sites and voucher links. Repeating a committed request returned the existing voucher, including after reopening the workspace. Killing the writer after it inserted the header and first line left zero partial rows. Retrying with the same ID posted one complete voucher.
+- `npm run test:desktop` passed on macOS 27.0 arm64 with Electron 45.3.2. In a disposable offline profile, the smoke test posted payment #41 for ₹5,000.25 from HDFC Bank to Anuj Kumar at Yamuna. The day book and the trial balance account drill-down opened #41. The Yamuna ledger closed at −₹12,999.75, and Back and Forward restored the site filter and voucher focus. After posting linked reversal #42, both trial balance totals returned to ₹21,98,000. The two voucher links still opened from the archived firm’s books after an offline relaunch.
+- The same desktop test created a bank and a cash account in Firm A and posted a ₹75.10 opening balance against Opening capital. Firm A’s trial balance showed ₹75.10 on each side. Phase 3 package checks on macOS and Windows remain pending.

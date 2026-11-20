@@ -10,18 +10,19 @@ export function DemoBalances({ demo }: { demo: NonNullable<Workspace['demo']> })
   return (
     <dl className="balances">
       <div><dt>Prototype vouchers</dt><dd>{demo.vouchers}</dd></div>
-      <div><dt>Trial balance debit</dt><dd>{rupees.format(demo.debit / 100)}</dd></div>
-      <div><dt>Trial balance credit</dt><dd>{rupees.format(demo.credit / 100)}</dd></div>
+      <div><dt>Prototype trial debit</dt><dd>{rupees.format(demo.debit / 100)}</dd></div>
+      <div><dt>Prototype trial credit</dt><dd>{rupees.format(demo.credit / 100)}</dd></div>
     </dl>
   );
 }
 
-export function Firms({ kind, workspace, saving, shortcut, changeWorkspace }: {
+export function Firms({ kind, workspace, saving, shortcut, changeWorkspace, openArchivedBooks }: {
   kind: WorkspaceKind;
   workspace: Workspace;
   saving: boolean;
   shortcut: string;
   changeWorkspace: (change: () => Promise<Workspace>) => Promise<Workspace | undefined>;
+  openArchivedBooks: (firmId: number) => void;
 }) {
   const [editor, setEditor] = useState<number | 'new' | null>(null);
   const [confirming, setConfirming] = useState(false);
@@ -147,8 +148,11 @@ export function Firms({ kind, workspace, saving, shortcut, changeWorkspace }: {
           )}
         </form>
       )}
-      {workspace.demo && firm?.archived && workspace.demo.firmId === firm.id && (
-        <section className="firm-history" aria-label="Archived firm history"><DemoBalances demo={workspace.demo} /></section>
+      {firm?.archived && (
+        <section className="firm-history" aria-label="Archived firm history">
+          {workspace.demo && workspace.demo.firmId === firm.id && <DemoBalances demo={workspace.demo} />}
+          <button className="secondary" id="open-archived-books" onClick={() => openArchivedBooks(firm.id)}>Open archived books</button>
+        </section>
       )}
     </div>
   );

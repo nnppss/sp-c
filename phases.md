@@ -6,7 +6,7 @@
 
 | Phase | Status | Working result |
 | --- | --- | --- |
-| 1. Desktop foundation | Planned | An offline Electron app can reopen its local workspace on Mac and Windows. |
+| 1. Desktop foundation | Blocked | Verified offline restart and workspace isolation on Apple silicon. Intel Mac launch and Windows installer and launch checks need platform runners. |
 | 2. Firms | Planned | The accountant can create two firms and switch between their books. |
 | 3. Vouchers and accounting core | Planned | A posted voucher can be opened from the day book, account ledger and trial balance. |
 | 4. Contractors | Planned | A single bank payment can be split across sites and traced back from Anuj’s ledger. |
@@ -115,7 +115,18 @@ Use a sample workspace with two firms, issued invoices, contractor site splits a
 | --- | --- | --- |
 | 20 Nov 2026 | Repository baseline | The prototype contains posting, invoice, statement import/match and backup code. The HTML shell references scripts and styles that are absent. The project has no Electron package or desktop installer. [Prototype entry point](app.py) · [Ledger code](ledger.py) · [HTML shell](static/index.html) |
 | 20 Nov 2026 | Prototype ledger check | With the seed date fixed at 20 Nov 2026, all 40 vouchers balanced individually. Closing debit and credit balances each totalled ₹21,98,000. The saved sale totalled ₹1,13,280 and the purchase ₹63,720. This checks the sample ledger. Desktop implementation awaits the module acceptance checks. |
+| 20 Nov 2026 | Phase 1 desktop foundation | Captured all 40 vouchers, postings, site assignments, balances and the two invoice snapshots. The Electron app opens separate Live and Demo SQLite files through a worker. Keyboard navigation and offline restart passed in development and from the mounted Apple silicon DMG. [Commands and platform results](#phase-1-verification) |
 
 ### Reproduce the prototype baseline
 
 Repeat the fixed-date check from the project root using the [build guide](docs/BUILD.md#reproduce-the-prototype-baseline). For the reading order and handover convention, see the [documentation index](docs/README.md).
+
+### Phase 1 verification
+
+- A clean `npm ci` and `npm exec -- install-electron` succeeded from local caches in a disposable checkout. `npm run build` and `npm test` passed there.
+- `python3 -B scripts/capture-prototype.py --check` matched the [checked-in fixture](fixtures/prototype-2026-11-20.json) against a fresh seed. `npm test` passed all three Vitest checks for voucher replay, trial and site balances, invoice totals, migration rollback, and workspace persistence.
+- `npm run test:desktop` passed on macOS 27.0 arm64 with the pinned Electron 45.3.2. The Playwright workflow used a fresh profile, navigated with Enter, checked Back and Forward focus and input selection, saved `Office books` and `Training books` with Cmd+S, quit, and reopened with the renderer offline. Both names and the demo balance returned from their respective SQLite files.
+- `npm run package:mac` produced [`release/sp-company-accounts-0.1.0-mac-arm64.dmg`](release/sp-company-accounts-0.1.0-mac-arm64.dmg) and [`release/sp-company-accounts-0.1.0-mac-x64.dmg`](release/sp-company-accounts-0.1.0-mac-x64.dmg). `hdiutil verify` passed for both images. `npm run test:packaged -- "<mount>/SP Company Accounts.app/Contents/MacOS/SP Company Accounts"` passed from the read-only Apple silicon image. The Intel bundle passed code-signature verification and still needs the launch and offline restart test on a compatible Mac.
+- `npm run package:win` cross-bundled [`release/win-unpacked/SP Company Accounts.exe`](release/win-unpacked/SP%20Company%20Accounts.exe). Static inspection confirmed the x64 executable and its packaged main, preload, worker, renderer and fixture. The NSIS step failed because the bundled `makensis` is an Intel macOS binary and this host lacks Rosetta. The Windows x64 NSIS build, install and offline smoke remain pending on a Windows runner.
+
+The local package attempts used cached Electron archives via `--config.electronDist` and a cached electron-builder tool directory. Standard commands and the executable paths for repeating the checks are in the [build guide](docs/BUILD.md#package-and-smoke-test).

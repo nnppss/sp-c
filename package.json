@@ -1,0 +1,40 @@
+{
+  "name": "sp-company-accounts",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Offline accounting workspace for SP & Company",
+  "author": "SP & Company",
+  "main": "dist/desktop/main.js",
+  "engines": { "node": ">=24.0.0 <25" },
+  "scripts": {
+    "dev": "npm run build && electron .",
+    "build": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.desktop.json && vite build",
+    "test": "tsc -p tsconfig.desktop.json && vitest run",
+    "test:desktop": "npm run build && node scripts/smoke-desktop.mjs .",
+    "test:packaged": "node scripts/smoke-desktop.mjs",
+    "package:mac": "npm run build && electron-builder --mac --arm64 --x64 --publish never",
+    "package:win": "npm run build && electron-builder --win --x64 --publish never"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "electron": "45.3.2",
+    "electron-builder": "26.18.0",
+    "playwright": "1.65.0",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
+    "typescript": "5.9.3",
+    "vite": "8.3.8",
+    "vitest": "2.1.9"
+  },
+  "build": {
+    "appId": "in.spcompany.accounts",
+    "productName": "SP Company Accounts",
+    "directories": { "output": "release" },
+    "files": ["dist/**", "fixtures/prototype-2026-11-20.json"],
+    "mac": { "target": "dmg", "category": "public.app-category.finance", "identity": "-" },
+    "win": { "target": "nsis", "signAndEditExecutable": false },
+    "artifactName": "${name}-${version}-${os}-${arch}.${ext}"
+  }
+}

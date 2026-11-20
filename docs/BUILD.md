@@ -1,6 +1,47 @@
-# Run and verify the accounting prototype
+# Build and verify SP & Company Accounts
 
-The current checkout contains a Python/SQLite backend and an HTML shell. The Electron application and its installers are phase 1 deliverables. This guide covers commands available in this checkout. See the [phase tracker](../phases.md) for delivery status.
+## Desktop development
+
+Use Node.js 24 with npm 11 from the project root. Use Python 3.10 or later to regenerate or verify the prototype fixture. The first install needs access to the npm registry and Electron downloads. Once installed, the development app loads the same local renderer used in packaged builds.
+
+```sh
+npm ci
+npm exec -- install-electron
+npm run dev
+```
+
+`npm run dev` compiles TypeScript, builds the renderer with Vite and opens Electron. Re-run it after edits. The app opens in Live by default. The Live and Demo buttons open `workspaces/live.sqlite3` and `workspaces/demo.sqlite3` under Electron’s `userData` directory. Open Workspace settings to change the displayed name. Demo contains the fixed-date prototype books, and a new Live workspace starts empty. Development and packaged smoke tests use disposable profiles.
+
+## Regression and desktop checks
+
+```sh
+python3 -B scripts/capture-prototype.py --check
+npm test
+npm run test:desktop
+```
+
+The fixture check compares the checked-in JSON with a fresh fixed-date Python seed. The Vitest suite replays the postings and checks the captured account and site balances, invoice snapshots, SQLite migrations and demo/live isolation. The desktop smoke opens a fresh profile, exercises keyboard navigation and focus restoration, saves separate names for Live and Demo, then quits and relaunches with networking disabled in the renderer. Run on a graphical desktop. On Windows, use `py -3 -B` in place of `python3 -B`.
+
+## Package and smoke-test
+
+```sh
+npm run package:mac
+npm run package:win
+```
+
+Run the macOS build on macOS. It produces separate Apple silicon and Intel disk images in `release/`. Run the Windows build on Windows for an x64 NSIS installer. The phase tracker records artifacts and platform checks. [Phase tracker](../phases.md)
+
+Use the built Electron executable to run the same smoke test against a package. For example, from the project root on macOS or Windows respectively:
+
+```sh
+npm run test:packaged -- "release/mac-arm64/SP Company Accounts.app/Contents/MacOS/SP Company Accounts"
+```
+
+```powershell
+npm run test:packaged -- ".\release\win-unpacked\SP Company Accounts.exe"
+```
+
+To check an installer, mount the DMG or run the Windows installer first and pass the mounted or installed executable path. macOS builds use ad-hoc signing. Windows builds are unsigned. For a build that uses cached Electron archives, append `-- --config.electronDist=/path/to/archives` to the packaging command. Keep the original archive filenames and use the pinned Electron version.
 
 ## Start the local backend
 
@@ -43,4 +84,4 @@ print("Prototype baseline passed")
 PY
 ```
 
-The expected output is `Prototype baseline passed`. Add the desktop install, test and packaging commands here as they become available on each platform.
+The expected output is `Prototype baseline passed`. To generate the fixture from the same seed, run `python3 -B scripts/capture-prototype.py`. The JSON in `fixtures/prototype-2026-11-20.json` contains all 40 vouchers with their original posting and site IDs, accounts, contractor assignments, closing balances, site-by-account balances and the two saved invoice snapshots. Amounts are signed integer paise where applicable.

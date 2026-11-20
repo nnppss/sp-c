@@ -9,6 +9,6 @@ Start with the accountant’s workflow, then follow a transaction through the de
 | Understand the delivery order and accountant pilot | [Delivery plan](../plan.md) |
 | Pick up development or review milestone evidence | [Phases and progress log](../phases.md) |
 | Start implementing the next phase in a fresh project chat | [Copy-paste build prompts](../phases.md#build-prompts) |
-| Run the current prototype or repeat the accounting check | [Build and run guide](BUILD.md) |
+| Build the desktop app, run the prototype or repeat the accounting check | [Build and run guide](BUILD.md) |
 
 For a handover, start with the latest dated evidence in the phase tracker. Record the phase, what changed, how it was checked and what remains. Update the relevant specification when a product or design decision changes.

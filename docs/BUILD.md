@@ -10,7 +10,7 @@ npm exec -- install-electron
 npm run dev
 ```
 
-`npm run dev` compiles TypeScript, builds the renderer with Vite and opens Electron. Re-run it after edits. The app opens in Live by default. The Live and Demo buttons open `workspaces/live.sqlite3` and `workspaces/demo.sqlite3` under Electron’s `userData` directory. Open Workspace settings to change the displayed name. Demo contains the fixed-date prototype books, and a new Live workspace starts empty. Use Firms to manage the directory and the Active firm control in the toolbar to switch books. Each workspace saves its own selection. In Vouchers, use Chart of accounts to create bank, cash or other accounts and Day book to post vouchers. In Reports, select a trial balance account to open its ledger, then select a voucher number to see its posting lines. Development and packaged smoke tests use disposable profiles.
+`npm run dev` compiles TypeScript, builds the renderer with Vite and opens Electron. Re-run it after edits. The app opens in Live by default. The Live and Demo buttons open `workspaces/live.sqlite3` and `workspaces/demo.sqlite3` under Electron’s `userData` directory. Open Workspace settings to change the displayed name. Demo contains the fixed-date prototype books, and a new Live workspace starts empty. Use Firms to manage the directory and the Active firm control in the toolbar to switch books. Each workspace saves its own selection. In Vouchers, use Chart of accounts to create bank, cash or other accounts and Day book to post vouchers. In Sale & Purchase, enter the invoice, then choose the booking firm and any amount or percentage allocation before issuing. Open the saved invoice for print, PDF, notes and receipts or payments. In Cashbooks, use Pay supplier bill to apply a payment from that cashbook. In Reports, select a report, firm and date filter. Select a linked account, invoice, statement row or voucher to open its source. The print and export actions use the full filtered report, including rows on subsequent pages. Development and packaged smoke tests use disposable profiles.
 
 ## Regression and desktop checks
 
@@ -22,7 +22,7 @@ npm run test:desktop
 
 The fixture check compares the checked-in JSON with a fresh fixed-date Python seed. Vitest checks SQLite migrations, firm persistence, voucher validation, duplicate saves, interruption recovery and linked reversals. It reconciles the demo ledger to the captured account and site balances and checks the issued invoice snapshots. The Electron smoke posts an opening balance and a payment, follows the payment through the reports, reverses it and checks the posted history after an offline restart. It also checks keyboard navigation, focus restoration and firm switching. Run on a graphical desktop. On Windows, use `py -3 -B` in place of `python3 -B`.
 
-The same Electron command runs the daily-entry pilot and the CSV/XLSX review workflows offline in disposable Demo books. See the [pilot worksheet](../phases.md#daily-entry-sample-pilot) for the entries and expected balances.
+The same Electron command runs the daily-entry pilot, CSV/XLSX review, invoice entry and reporting workflows offline in disposable Demo books. It checks output through temporary PDF and CSV files. On macOS it also compares PDF text with the screen totals using the built-in PDFKit framework. See the [pilot worksheet](../phases.md#daily-entry-sample-pilot) for the entries and expected balances.
 
 ## Package and smoke-test
 

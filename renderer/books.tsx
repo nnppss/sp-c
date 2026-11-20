@@ -90,9 +90,9 @@ export function Pagination({ page, next, change }: { page: number; next: boolean
 
 type LoadState = { view: BookView } & ({ result: Awaited<ReturnType<typeof load>> } | { error: string });
 
-export function Books({ workspace, firm, view, savedFocus, shortcut, open, replace, back }: {
+export function Books({ workspace, firm, view, savedFocus, shortcut, open, replace, back, showInvoice }: {
   workspace: WorkspaceKind; firm: Firm; view: BookView; savedFocus?: string; shortcut: string;
-  open: (view: BookView) => void; replace: (view: BookView) => void; back: () => void;
+  open: (view: BookView) => void; replace: (view: BookView) => void; back: () => void; showInvoice: (voucherId: number) => void;
 }) {
   const [state, setState] = useState<LoadState>();
   const [attempt, setAttempt] = useState(0);
@@ -229,6 +229,8 @@ export function Books({ workspace, firm, view, savedFocus, shortcut, open, repla
           </div>
           {screen.saved && <p role="status">{voucher.reversesId === null ? 'Voucher posted.' : 'Reversal posted.'}</p>}
           <p>{voucher.day}{voucher.memo && ' · ' + voucher.memo}</p>
+          {voucher.invoiceId !== undefined && <p><button id="voucher-invoice" className="book-link"
+            onClick={() => showInvoice(voucher.invoiceId!)}>Open linked invoice</button></p>}
           {voucher.payee && <p>Payee {payeeName(voucher.payee)}</p>}
           {voucher.employee && <p>Employee <button className="book-link" id="voucher-employee"
             onClick={() => ledger(voucher.employee!.id)}>{voucher.employee.name}</button></p>}

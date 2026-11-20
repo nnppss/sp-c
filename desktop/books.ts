@@ -1,3 +1,5 @@
+import type { BillPayment, InvoiceEntry, InvoiceQuery, InvoiceRow, IssuedInvoice } from './invoices';
+import type { Report, ReportQuery } from './report-model';
 import type { WorkspaceKind } from './workspace';
 
 export const ACCOUNT_KINDS = ['asset', 'liability', 'equity', 'income', 'expense', 'bank', 'cash', 'party', 'contractor', 'employee'] as const;
@@ -49,7 +51,7 @@ export type Voucher = {
   id: number; day: string; kind: string; memo: string; amount: number;
   reversesId: number | null; reversedById: number | null;
 };
-export type VoucherDetail = Voucher & { lines: Line[]; payee: VoucherPayee | null; employee?: { id: number; name: string } };
+export type VoucherDetail = Voucher & { lines: Line[]; payee: VoucherPayee | null; employee?: { id: number; name: string }; invoiceId?: number };
 export type PostVoucher = {
   requestId: string; day: string; memo: string;
 } & ({ kind: 'Opening balance'; accountId: number; value: number }
@@ -82,6 +84,7 @@ export type TrialBalance = { rows: (Account & { balance: bigint })[]; debit: big
 
 type BookOperations = {
   getChart: [undefined, Chart];
+  getReport: [ReportQuery, Report];
   createAccount: [{ name: string; kind: AccountKind }, Account];
   getContractors: [undefined, ContractorDirectory];
   saveContractor: [ContractorDetails, Account];
@@ -110,14 +113,18 @@ type BookOperations = {
   getDayBook: [DayBookQuery, Paged<Voucher>];
   getLedger: [LedgerQuery, Ledger];
   getTrialBalance: [{ to?: string }, TrialBalance];
+  postInvoice: [InvoiceEntry, IssuedInvoice];
+  getInvoice: [{ voucherId: number }, IssuedInvoice];
+  getInvoices: [InvoiceQuery, Paged<InvoiceRow>];
+  applyBillPayment: [BillPayment, VoucherDetail];
 };
 
 export const BOOK_OPERATIONS = [
-  'getChart', 'createAccount', 'getContractors', 'saveContractor', 'removeContractor', 'getContractorLedger',
+  'getChart', 'getReport', 'createAccount', 'getContractors', 'saveContractor', 'removeContractor', 'getContractorLedger',
   'getCashbooks', 'createCashbook', 'saveCashbookCustodian', 'removeCashbook', 'getCashbookLedger',
   'getNamedAccounts', 'saveNamedAccount', 'removeNamedAccount', 'getEmployeeLedger', 'postEmployee', 'postBank',
   'previewStatement', 'importStatement', 'getStatements', 'getStatement', 'getStatementMatches', 'confirmStatement',
-  'postVoucher', 'reverseVoucher', 'getVoucher', 'getDayBook', 'getLedger', 'getTrialBalance',
+  'postVoucher', 'reverseVoucher', 'getVoucher', 'getDayBook', 'getLedger', 'getTrialBalance', 'postInvoice', 'getInvoice', 'getInvoices', 'applyBillPayment',
 ] as const satisfies readonly (keyof BookOperations)[];
 
 export type BookOperation = keyof BookOperations;

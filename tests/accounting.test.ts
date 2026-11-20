@@ -525,3 +525,179 @@ test('statement imports preserve multiplicity and confirmation links exactly one
     db.close();
   }
 });
+
+test('issued invoices, notes and bill applications reconcile to the firm books and management reports', () => {
+  const kind = 'live';
+  const db = openWorkspace(directory, kind, fixture);
+  const firmA = firm(db, kind, 'Firm A');
+  const firmB = firm(db, kind, 'Firm B');
+  const a = books(db, kind, firmA);
+  const b = books(db, kind, firmB);
+  const opening = '2026-11-16';
+  const billDay = '2026-11-18';
+  const paymentDay = '2026-11-19';
+  const noteDay = '2026-11-20';
+  const purchase = {
+    requestId: 'purchase-a', side: 'Purchase', document: 'Invoice', number: 'SUP-421', day: billDay, issuerId: firmA,
+    party: 'Vikram Enterprises', partyAddress: 'Supplier address', partyGstin: 'GST-SUP', consumer: 'Site office',
+    supply: 'Agra', taxMode: 'split', allocationMode: 'amount', items: [
+      { description: 'Steel', quantity: '2.5', unit: 't', rate: '40000', gst: '18' },
+    ], allocations: [{ firmId: firmA, value: '60000' }, { firmId: firmB, value: '40000' }],
+  } satisfies import('../desktop/invoices').InvoiceEntry;
+  let saleId: number;
+  let billId: number;
+  try {
+    runWorkspaceCommand(db, { kind, operation: 'saveFirm', id: firmA,
+      details: { name: 'Firm A', owner: 'Asha', address: '12 Old Address', gstin: 'GST-FIRM' } });
+    const cashbook = a('createCashbook', { name: 'Site cash', custodian: 'Vikram', requestId: 'site',
+      openingCash: 1_000_000, openedOn: opening });
+    const bill = a('postInvoice', purchase);
+    billId = bill.voucherId;
+    expect(a('postInvoice', purchase)).toEqual(bill);
+    expect(() => a('postInvoice', { ...purchase, number: 'X' })).toThrow(/different voucher/);
+    expect(() => a('postInvoice', { ...purchase, requestId: 'other-a' })).toThrow(/already in use/);
+    expect(() => a('postInvoice', { ...purchase, number: 'X', requestId: 'bad-split',
+      allocations: [{ firmId: firmB, value: '5000' }] })).toThrow(/total the pre-tax/);
+    expect(bill.snapshot.totals).toEqual({ base: 10_000_000, CGST: 900_000, SGST: 900_000, IGST: 0, total: 11_800_000 });
+    expect(bill.snapshot.allocations.map(row => row.amount)).toEqual([6_000_000, 4_000_000]);
+    expect(a('getDayBook', { from: billDay }).rows.map(row => row.id)).toEqual([billId]);
+    const byName = Object.fromEntries(a('getTrialBalance', {}).rows.map(row => [row.name, row]));
+    const payable = byName['Vikram Enterprises'];
+    expect([byName.Purchases.balance, byName['Input CGST'].balance, byName['Input SGST'].balance, payable.balance])
+      .toEqual([10_000_000n, 900_000n, 900_000n, -11_800_000n]);
+    expect(b('getTrialBalance', {}).rows).toEqual([]);
+    const combined = a('getReport', { name: 'allocations', combined: true, from: billDay, to: billDay });
+    expect(combined.tables[0].totals).toEqual([['Total allocated', 0n, 10_000_000n, 10_000_000n]]);
+    expect(combined.tables[1].rows.map(row => row[0])).toEqual([
+      { label: 'SUP-421', source: { view: 'invoice', firmId: firmA, id: billId } },
+      { label: 'SUP-421', source: { view: 'invoice', firmId: firmA, id: billId } },
+    ]);
+    expect(b('getReport', { name: 'allocations' }).tables[0].totals).toEqual([['Total allocated', 0n, 4_000_000n, 4_000_000n]]);
+
+    const payment = { invoiceId: billId, accountId: cashbook.id, requestId: 'apply', day: paymentDay, memo: '', amount: 650_000 };
+    expect(() => b('applyBillPayment', payment)).toThrow(/invoice in this firm/);
+    expect(() => a('applyBillPayment', { ...payment, amount: 11_800_001 })).toThrow(/bill balance/);
+    expect(a('getCashbookLedger', { accountId: cashbook.id }).closing).toBe(1_000_000n);
+    const applied = a('applyBillPayment', payment);
+    expect(a('applyBillPayment', payment)).toEqual(applied);
+    expect(applied).toMatchObject({ invoiceId: billId, lines: [line(cashbook.id, -650_000), line(payable.id, 650_000)] });
+    expect(a('getCashbookLedger', { accountId: cashbook.id }).closing).toBe(350_000n);
+    expect(a('getLedger', { accountId: byName.Purchases.id }).closing).toBe(10_000_000n);
+    expect(a('getInvoice', { voucherId: billId }).outstanding).toBe(11_150_000);
+    expect(a('getReport', { name: 'bills', to: billDay }).tables[1].totals?.[0].at(-1)).toBe(11_800_000n);
+    expect(a('getReport', { name: 'bills', to: paymentDay }).tables[1].totals)
+      .toEqual([['Total', '', '', 11_800_000n, 0n, 650_000n, 11_150_000n]]);
+    expect(() => a('reverseVoucher', { voucherId: billId, requestId: 'early', day: noteDay, memo: 'Void invoice' }))
+      .toThrow(/bill payments/);
+
+    const debit = a('postInvoice', { ...purchase, requestId: 'purchase-return', originalId: billId,
+      document: 'Debit note', number: 'DN-1', day: noteDay,
+      items: [{ ...purchase.items[0], quantity: '1', rate: '1000' }], allocations: [] });
+    expect(a('getInvoice', { voucherId: billId }).outstanding).toBe(11_032_000);
+    const reverse = a('reverseVoucher', { voucherId: debit.voucherId, requestId: 'undo-debit', day: '2026-11-21', memo: 'Void return' });
+    expect(reverse.invoiceId).toBe(debit.voucherId);
+    expect(a('getInvoice', { voucherId: billId }).outstanding).toBe(11_150_000);
+    expect(a('getReport', { name: 'purchases', to: noteDay }).tables[0].totals?.[0].slice(4, 9))
+      .toEqual([9_900_000n, 891_000n, 891_000n, 0n, 11_682_000n]);
+    expect(a('getReport', { name: 'purchases' }).tables[0].totals?.[0].slice(4, 9))
+      .toEqual([10_000_000n, 900_000n, 900_000n, 0n, 11_800_000n]);
+
+    const saleDraft = { ...purchase, side: 'Sale', requestId: 'issue-sale', number: 'A-24', day: paymentDay,
+      party: 'Customer', taxMode: 'igst', items: [{ description: 'Custom work', unit: 'm', quantity: '3.125', rate: '106.15', gst: '18' }],
+      allocations: [{ firmId: firmA, value: '33.333333' }, { firmId: firmB, value: '66.666667' }], allocationMode: 'percent',
+    } satisfies import('../desktop/invoices').InvoiceEntry;
+    const sale = a('postInvoice', saleDraft);
+    saleId = sale.voucherId;
+    expect(sale.snapshot.totals).toEqual({ base: 33_172, CGST: 0, SGST: 0, IGST: 5_971, total: 39_143 });
+    expect(sale.snapshot.allocations.map(row => row.amount)).toEqual([11_057, 22_115]);
+    const credit = a('postInvoice', { ...saleDraft, originalId: saleId, document: 'Credit note', requestId: 'refund',
+      number: 'CN-1', day: noteDay, items: [{ ...saleDraft.items[0], quantity: '1', rate: '100' }], allocations: [] });
+    expect(a('getInvoice', { voucherId: saleId }).outstanding).toBe(27_343);
+    expect(credit.snapshot.originalNumber).toBe(sale.snapshot.number);
+    runWorkspaceCommand(db, { kind, operation: 'saveFirm', id: firmA,
+      details: { name: 'Firm A', owner: 'Asha', address: '99 New Address', gstin: 'GST-FIRM' } });
+    expect(a('postInvoice', saleDraft).snapshot).toEqual(sale.snapshot);
+    const trial = a('getTrialBalance', { to: paymentDay });
+    for (const account of trial.rows) {
+      expect(a('getLedger', { accountId: account.id, to: paymentDay }).closing, account.name).toBe(account.balance);
+      expect(a('getReport', { name: 'ledger', accountId: account.id, to: paymentDay }).tables[0].totals?.at(-1)?.at(-1))
+        .toBe(account.balance);
+    }
+    expect(trial.debit).toBe(trial.credit);
+    expect(a('getReport', { name: 'trial', to: paymentDay }).tables[0].totals).toEqual([['Total', trial.debit, trial.credit]]);
+    const balance = a('getReport', { name: 'balance', to: paymentDay }).tables.at(-1)!.totals!;
+    expect(balance[0][1]).toBe(balance[1][1]);
+    expect(balance[2]).toEqual(['Difference', 0n]);
+    expect(a('getReport', { name: 'pnl', from: billDay, to: paymentDay }).tables.at(-1)!.totals)
+      .toEqual([['Net profit / (loss)', -9_966_828n]]);
+    expect(a('getReport', { name: 'gst', to: paymentDay }).tables.at(-1)!.totals)
+      .toEqual([['Output less input', -900_000n, -900_000n, 5_971n]]);
+
+    a('applyBillPayment', { ...payment, invoiceId: saleId, amount: 27_343, day: noteDay, requestId: 'sale-receipt' });
+    expect(a('getInvoice', { voucherId: saleId }).outstanding).toBe(0);
+    a('postInvoice', { ...saleDraft, originalId: saleId, document: 'Credit note', requestId: 'credit-paid-sale',
+      number: 'CN-2', day: noteDay, items: [{ ...saleDraft.items[0], quantity: '1', rate: '100' }], allocations: [] });
+    expect(a('getInvoice', { voucherId: saleId }).outstanding).toBe(-11_800);
+    a('applyBillPayment', { ...payment, invoiceId: saleId, amount: 11_800, day: noteDay, refund: true, requestId: 'cash-refund' });
+    expect(a('getInvoice', { voucherId: saleId }).outstanding).toBe(0);
+  } finally {
+    db.close();
+  }
+
+  const reopened = openWorkspace(directory, kind, fixture);
+  try {
+    expect(books(reopened, kind, firmA)('getInvoice', { voucherId: saleId! }).snapshot.issuer.address).toBe('12 Old Address');
+    expect(books(reopened, kind, firmA)('getInvoice', { voucherId: billId! }).outstanding).toBe(11_150_000);
+  } finally {
+    reopened.close();
+  }
+});
+
+test('statement reconciliation traces exact book and imported movements before and after reversal', () => {
+  const db = openWorkspace(directory, 'live', fixture);
+  try {
+    const id = firm(db, 'live', 'Reconciliation');
+    const run = books(db, 'live', id);
+    const bank = run('createAccount', { name: 'Bank', kind: 'bank' });
+    const expense = run('createAccount', { name: 'Supplies', kind: 'expense' });
+    run('postVoucher', { kind: 'Opening balance', requestId: 'open-bank', day: '2026-11-17', memo: '', accountId: bank.id, value: 2_000_000 });
+    const booked = run('postBank', { bankId: bank.id, accountId: expense.id, siteId: null, requestId: 'first',
+      day: '2026-11-18', memo: 'Supplies', value: -500_000 });
+    run('postBank', { bankId: bank.id, accountId: expense.id, siteId: null, requestId: 'second',
+      day: '2026-11-19', memo: 'Unmatched', value: -100_000 });
+    const bytes = new TextEncoder().encode('Date,Description,Amount\n2026-11-18,Supplies,-5000\n2026-11-19,Pending,2000').buffer;
+    run('importStatement', { accountId: bank.id, filename: 'statement.csv', bytes, mapping: { date: 0, description: 1, amount: 2 } });
+    const statement = run('getStatements', { accountId: bank.id }).rows.find(row => row.value < 0)!;
+    run('confirmStatement', { bankId: bank.id, rowId: statement.id, voucherId: booked.id, accountId: expense.id,
+      siteId: null, requestId: 'match' });
+    const report = () => run('getReport', { name: 'bank', from: '2026-11-18', to: '2026-11-19' });
+    expect(report().tables[0].rows[0].slice(1))
+      .toEqual([2_000_000n, -600_000n, 1_400_000n, -300_000n, -500_000n, -100_000n, 200_000n, -300_000n]);
+    expect(report().tables[1].rows[0].at(-1)).toEqual({ label: '#' + booked.id, source: { view: 'voucher', firmId: id, id: booked.id } });
+    run('reverseVoucher', { voucherId: booked.id, requestId: 'reverse', day: '2026-11-20', memo: 'Correct bank entry' });
+    expect(report().tables[0].rows[0][5]).toBe(-500_000n);
+    expect(run('getReport', { name: 'bank', from: '2026-11-18' }).tables[0].rows[0][5]).toBe(0n);
+  } finally {
+    db.close();
+  }
+});
+
+test('upgrading version 5 indexes issued prototype snapshots and the seeded part payment', () => {
+  let db = openWorkspace(directory, 'demo', fixture);
+  db.exec(`DROP VIEW bill_movements; DROP TABLE bill_applications; DROP TABLE invoice_allocations;
+    DROP TABLE invoice_records; DROP TABLE statement_match_history; PRAGMA user_version = 5;`);
+  db.close();
+  db = openWorkspace(directory, 'demo', fixture);
+  try {
+    const run = books(db, 'demo', 1);
+    expect(run('getInvoice', { voucherId: 35 })).toMatchObject({
+      snapshot: { issuer: { address: 'Agra, Uttar Pradesh' }, number: 'SP-026', totals: { total: 11_328_000 } },
+      outstanding: 4_828_000, activity: [{ voucherId: 35, amount: 11_328_000 }, { voucherId: 39, amount: -6_500_000 }],
+    });
+    expect(run('getInvoices', {}).rows.map(row => row.number)).toEqual(['SP-026', 'AST-218']);
+    expect(run('getDayBook', {}).rows).toHaveLength(25);
+    expect(run('getReport', { name: 'day' }).tables[0].rows).toHaveLength(40);
+  } finally {
+    db.close();
+  }
+});

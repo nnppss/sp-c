@@ -7,6 +7,7 @@ const bridge: WorkspaceBridge = {
   saveFirm: (kind, id, details) => ipcRenderer.invoke('workspace:save-firm', kind, id, details),
   selectFirm: (kind, id) => ipcRenderer.invoke('workspace:select-firm', kind, id),
   removeFirm: (kind, id) => ipcRenderer.invoke('workspace:remove-firm', kind, id),
+  getReport: (kind, firmId, input) => ipcRenderer.invoke('books:getReport', kind, firmId, input),
   getChart: (kind, firmId) => ipcRenderer.invoke('books:getChart', kind, firmId),
   createAccount: (kind, firmId, input) => ipcRenderer.invoke('books:createAccount', kind, firmId, input),
   getContractors: (kind, firmId) => ipcRenderer.invoke('books:getContractors', kind, firmId),
@@ -36,6 +37,11 @@ const bridge: WorkspaceBridge = {
   getDayBook: (kind, firmId, input) => ipcRenderer.invoke('books:getDayBook', kind, firmId, input),
   getLedger: (kind, firmId, input) => ipcRenderer.invoke('books:getLedger', kind, firmId, input),
   getTrialBalance: (kind, firmId, input) => ipcRenderer.invoke('books:getTrialBalance', kind, firmId, input),
+  postInvoice: (kind, firmId, input) => ipcRenderer.invoke('books:postInvoice', kind, firmId, input),
+  getInvoice: (kind, firmId, input) => ipcRenderer.invoke('books:getInvoice', kind, firmId, input),
+  getInvoices: (kind, firmId, input) => ipcRenderer.invoke('books:getInvoices', kind, firmId, input),
+  applyBillPayment: (kind, firmId, input) => ipcRenderer.invoke('books:applyBillPayment', kind, firmId, input),
+  output: (input) => ipcRenderer.invoke('desktop:output', input),
   isMac: process.platform === 'darwin',
 };
 

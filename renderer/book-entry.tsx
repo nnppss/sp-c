@@ -48,7 +48,9 @@ export function entryKeys(event: KeyboardEvent<HTMLFormElement>, cancel: () => v
   const target = event.target;
   if (target instanceof HTMLSelectElement && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
     event.preventDefault();
-    const next = target.selectedIndex + (event.key === 'ArrowDown' ? 1 : -1);
+    const direction = event.key === 'ArrowDown' ? 1 : -1;
+    let next = target.selectedIndex + direction;
+    while (target.options[next]?.disabled) next += direction;
     if (next >= 0 && next < target.options.length) {
       target.selectedIndex = next;
       target.dispatchEvent(new Event('change', { bubbles: true }));
@@ -57,7 +59,7 @@ export function entryKeys(event: KeyboardEvent<HTMLFormElement>, cancel: () => v
   }
   if (event.key !== 'Enter') return;
   const fields = Array.from(event.currentTarget.querySelectorAll<HTMLElement>(
-    'input:not(:disabled), select:not(:disabled), button[type="submit"]:not(:disabled)'));
+    'input:not(:disabled), select:not(:disabled), textarea[data-advance]:not(:disabled), button[type="submit"]:not(:disabled)'));
   const index = fields.indexOf(event.target as HTMLElement);
   if (index >= 0 && index < fields.length - 1) {
     event.preventDefault();

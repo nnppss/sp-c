@@ -3,6 +3,8 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { parentPort, workerData } from 'node:worker_threads';
 import { accountingSchema, BookInputError, replayDemo, runAccountingCommand } from './accounting';
+import { getReport } from './reports';
+import { indexPrototypeInvoices, invoiceSchema } from './invoice-schema';
 import type { BookCommand } from './books';
 import { StatementFileError } from './statement-file';
 import { FIRM_FIELDS, isWorkspaceKind, workspaceName } from './workspace';
@@ -70,6 +72,7 @@ const migrations = [
    ) STRICT;
    CREATE INDEX statement_review ON statement_rows(firm_id, bank_id, day, id);
    CREATE INDEX statement_by_voucher ON statement_rows(firm_id, voucher_id);`,
+  invoiceSchema,
 ];
 
 class FirmInputError extends Error {}
@@ -105,6 +108,7 @@ export function openWorkspace(directory: string, kind: WorkspaceKind, fixture: s
         .get() as { firmId: number; snapshot: string };
       replayDemo(db, firmId, snapshot);
     }
+    if (kind === 'demo' && version < 6) indexPrototypeInvoices(db);
     db.exec('COMMIT');
     return db;
   } catch (error) {
@@ -205,7 +209,8 @@ export function runWorkspaceCommand(db: DatabaseSync, command: WorkspaceCommand)
 }
 
 export function runBookCommand(db: DatabaseSync, command: BookCommand) {
-  return runAccountingCommand(db, requireFirm(db, command.firmId), command);
+  const firm = requireFirm(db, command.firmId);
+  return command.operation === 'getReport' ? getReport(db, firm.id, command.input) : runAccountingCommand(db, firm, { ...command, operation: command.operation });
 }
 
 if (parentPort) {

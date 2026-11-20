@@ -127,3 +127,36 @@ footer { border-top: 1px solid var(--line); color: var(--muted); font-size: .76r
 .contractor-remove { margin-top: 16px; }
 .voucher-narration { display: block; overflow-wrap: anywhere; color: var(--muted); }
 .statement-mapping { margin-top: 16px; }
+
+.invoice-entry { max-width: none; }
+.invoice-entry .entry-hint { font-size: .85rem; color: var(--muted); }
+.invoice-tax-fields { margin-top: 14px; }
+.invoice-sticky { position: sticky; bottom: 0; z-index: 1; background: var(--paper); border-top: 1px solid var(--line); margin-top: 15px; padding: 0 0 10px; }
+.invoice-sticky p { font-variant-numeric: tabular-nums; }
+.invoice-paper { margin: 16px 0; padding: 20px; background: white; border: 1px solid var(--line); border-radius: 8px; }
+.invoice-parties { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin: 15px 0; }
+.invoice-paper h3, .report-section h3 { margin: 0 0 5px; font-size: 1rem; }
+.invoice-paper .address { white-space: pre-line; overflow-wrap: anywhere; }
+.invoice-booking, .report-section { margin-top: 20px; }
+.report-heading { margin-top: 18px; }
+.report-heading p { margin: 6px 0 0; color: var(--muted); }
+.report-view .print-only { display: none; }
+
+@page { size: A4; margin: 12mm; }
+@media print {
+  :root { background: white; color: black; }
+  .shell, .workspace { display: block; }
+  .sidebar, .toolbar, .workspace > footer, .print-control, .book-pagination { display: none !important; }
+  main { max-width: none; padding: 0; }
+  main > :not(:has(.print-document)), .invoice-module > :not(.print-document), .report-view > :not(.print-document) { display: none !important; }
+  .books, .report-heading { margin-top: 0; }
+  .invoice-paper { margin: 0; padding: 0; border: 0; }
+  .book-table { overflow: visible; }
+  .book-table table { font-size: 9pt; overflow-wrap: anywhere; }
+  .book-table th, .book-table td { padding: 5px; }
+  .book-table tr { break-inside: avoid; }
+  .book-table tfoot { display: table-row-group; }
+  .book-link { color: inherit; text-decoration: none; }
+  .report-view .print-only { display: table-row; }
+  .report-section h3 { break-after: avoid; }
+}

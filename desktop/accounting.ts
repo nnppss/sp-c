@@ -2,6 +2,10 @@ import type { DatabaseSync } from 'node:sqlite';
 import { ACCOUNT_KINDS, EMPLOYEE_ACTIONS, PAGE_SIZE, VOUCHER_KINDS } from './books';
 import type { Account, BookCommand, BookResult, Cashbook, CashbookLedger, Chart, ContractorDirectory, ContractorLedger,
   Ledger, Line, NamedAccount, NamedKind, Site, StatementRow, TrialBalance, Voucher, VoucherDetail, VoucherPayee } from './books';
+import { allocationAmounts, invoiceAmounts, invoiceDirection, invoiceTotals, INVOICE_SIDES, TAX_COMPONENTS } from './invoices';
+import type { BillActivity, InvoiceAmounts, InvoiceItem, InvoiceRow, InvoiceSide,
+  InvoiceSnapshot, IssuedInvoice } from './invoices';
+import type { FirmDetails } from './workspace';
 import { mapStatement, previewStatement } from './statement-file';
 
 export const accountingSchema = `
@@ -60,11 +64,11 @@ export const accountingSchema = `
 
 export class BookInputError extends Error {}
 
-function check(condition: unknown, message: string): asserts condition {
+export function check(condition: unknown, message: string): asserts condition {
   if (!condition) throw new BookInputError(message);
 }
 
-function fields(input: unknown): Record<string, unknown> {
+export function fields(input: unknown): Record<string, unknown> {
   check(input && typeof input === 'object' && !Array.isArray(input), 'Enter valid accounting details.');
   return input as Record<string, unknown>;
 }
@@ -126,7 +130,7 @@ function getSite(db: DatabaseSync, firmId: number, value: unknown) {
   return siteId;
 }
 
-function getChart(db: DatabaseSync, firmId: number): Chart {
+export function getChart(db: DatabaseSync, firmId: number): Chart {
   return {
     accounts: db.prepare(`SELECT ${accountColumns} FROM accounts WHERE firm_id = ? ORDER BY name, id`).all(firmId) as Account[],
     sites: db.prepare('SELECT id, name FROM sites WHERE firm_id = ? ORDER BY name, id').all(firmId) as Site[],
@@ -146,16 +150,19 @@ function voucherPayee(row: PayeeColumns): VoucherPayee | null {
 
 function getVoucher(db: DatabaseSync, firmId: number, value: unknown): VoucherDetail {
   const voucherId = id(value, 'voucher');
-  const row = db.prepare(`SELECT ${voucherColumns}, ${payeeColumns}, e.id AS employeeId, e.name AS employeeName
+  const row = db.prepare(`SELECT ${voucherColumns}, ${payeeColumns}, e.id AS employeeId, e.name AS employeeName,
+    COALESCE(i.voucher_id, b.invoice_id) AS invoiceId
     FROM vouchers v ${voucherReversal} ${payeeJoin}
+    LEFT JOIN invoice_records i ON i.voucher_id = COALESCE(v.reverses_id, v.id)
+    LEFT JOIN bill_applications b ON b.voucher_id = COALESCE(v.reverses_id, v.id)
     LEFT JOIN accounts e ON e.firm_id = v.firm_id AND e.id = v.employee_id
     WHERE v.firm_id = ? AND v.id = ?`).get(firmId, voucherId) as
-    (Voucher & PayeeColumns & { employeeId: number | null; employeeName: string }) | undefined;
+    (Voucher & PayeeColumns & { employeeId: number | null; employeeName: string; invoiceId: number | null }) | undefined;
   check(row, 'Choose a voucher in this firm.');
-  const { person, payeeFirmId, firmName, owner, employeeId, employeeName, ...voucher } = row;
+  const { person, payeeFirmId, firmName, owner, employeeId, employeeName, invoiceId, ...voucher } = row;
   const lines = db.prepare(`SELECT account_id AS accountId, site_id AS siteId, value FROM posting_lines
     WHERE firm_id = ? AND voucher_id = ? ORDER BY id`).all(firmId, voucherId) as Line[];
-  return { ...voucher, lines, payee: voucherPayee({ person, payeeFirmId, firmName, owner }),
+  return { ...voucher, lines, ...(invoiceId === null ? {} : { invoiceId }), payee: voucherPayee({ person, payeeFirmId, firmName, owner }),
     ...(employeeId === null ? {} : { employee: { id: employeeId, name: employeeName } }),
   };
 }
@@ -585,15 +592,31 @@ function post(db: DatabaseSync, firm: { id: number; archived: boolean }, input: 
         }), 'This request ID is already used by a different voucher.');
     } else {
       const voucherId = writeVoucher(db, firmId, requestId, { day: voucherDay, kind, memo, reversesId, lines, payee, employeeId });
-      if (reversesId !== null) db.prepare('UPDATE statement_rows SET voucher_id = NULL WHERE firm_id = ? AND voucher_id = ?')
-        .run(firmId, reversesId);
+      if (reversesId !== null) {
+        const source = db.prepare(`SELECT COALESCE(original_id, voucher_id) AS billId FROM invoice_records WHERE voucher_id = ?
+          UNION ALL SELECT invoice_id FROM bill_applications WHERE voucher_id = ?`).get(reversesId, reversesId);
+        if (source) {
+          if (source.billId === reversesId) {
+            check(!db.prepare(`SELECT 1 FROM bill_movements
+              WHERE bill_id = ? AND voucherId NOT IN (?, ?) AND day > ? LIMIT 1`).get(reversesId, reversesId, voucherId, voucherDay) &&
+              !db.prepare(`SELECT 1 FROM (
+                SELECT voucher_id FROM invoice_records WHERE original_id = ?
+                UNION ALL SELECT voucher_id FROM bill_applications WHERE invoice_id = ?
+              ) d WHERE NOT EXISTS (SELECT 1 FROM vouchers WHERE reverses_id = d.voucher_id AND day <= ?)`)
+                .get(reversesId, reversesId, voucherDay),
+            'Reverse the bill payments and notes before reversing this invoice.');
+          }
+          validateBillTimeline(db, source.billId as number);
+        }
+        db.prepare('UPDATE statement_rows SET voucher_id = NULL WHERE firm_id = ? AND voucher_id = ?').run(firmId, reversesId);
+      }
       voucher = getVoucher(db, firmId, voucherId);
     }
     return voucher;
   });
 }
 
-function period(input: Record<string, unknown>) {
+export function period(input: Record<string, unknown>) {
   const from = input.from === undefined ? null : day(input.from);
   const to = input.to === undefined ? null : day(input.to);
   check(!from || !to || from <= to, 'The end date must be on or after the start date.');
@@ -607,18 +630,18 @@ function pageOffset(value: unknown) {
   return value * PAGE_SIZE;
 }
 
-function getDayBook(db: DatabaseSync, firmId: number, input: Record<string, unknown>) {
+export function getDayBook(db: DatabaseSync, firmId: number, input: Record<string, unknown>, all = false) {
   const { from, to } = period(input);
   const rows = db.prepare(`SELECT ${voucherColumns} FROM vouchers v ${voucherReversal}
     WHERE v.firm_id = $firm AND ($from IS NULL OR v.day >= $from) AND ($to IS NULL OR v.day <= $to)
     ORDER BY v.day DESC, v.id DESC LIMIT $limit OFFSET $offset`)
-    .all({ firm: firmId, from, to, limit: PAGE_SIZE + 1, offset: pageOffset(input.page) }) as Voucher[];
-  return { rows: rows.slice(0, PAGE_SIZE), hasNext: rows.length > PAGE_SIZE };
+    .all({ firm: firmId, from, to, limit: all ? -1 : PAGE_SIZE + 1, offset: all ? 0 : pageOffset(input.page) }) as Voucher[];
+  return { rows: all ? rows : rows.slice(0, PAGE_SIZE), hasNext: !all && rows.length > PAGE_SIZE };
 }
 
-function getLedger(db: DatabaseSync, firmId: number, input: Record<string, unknown>, contractor: true): ContractorLedger;
-function getLedger(db: DatabaseSync, firmId: number, input: Record<string, unknown>): Ledger;
-function getLedger(db: DatabaseSync, firmId: number, input: Record<string, unknown>, contractor = false): Ledger | ContractorLedger {
+export function getLedger(db: DatabaseSync, firmId: number, input: Record<string, unknown>, contractor: true): ContractorLedger;
+export function getLedger(db: DatabaseSync, firmId: number, input: Record<string, unknown>, contractor?: false, all?: boolean): Ledger;
+export function getLedger(db: DatabaseSync, firmId: number, input: Record<string, unknown>, contractor = false, all = false): Ledger | ContractorLedger {
   const account = contractor ? getContractor(db, firmId, input.accountId) : getAccount(db, firmId, input.accountId);
   const site = input.siteId === undefined ? null : getSite(db, firmId, input.siteId);
   const { from, to } = period(input);
@@ -649,16 +672,16 @@ function getLedger(db: DatabaseSync, firmId: number, input: Record<string, unkno
     )
     SELECT * FROM movements WHERE $from IS NULL OR day >= $from
     ORDER BY day, voucherId, lineId LIMIT $limit OFFSET $offset`)
-    .all({ ...params, limit: PAGE_SIZE + 1, offset: pageOffset(input.page) }) as
+    .all({ ...params, limit: all ? -1 : PAGE_SIZE + 1, offset: all ? 0 : pageOffset(input.page) }) as
     (Omit<Ledger['rows'][number], 'running'> & { running: string; method: string; reversal: number; reimbursement: number | null })[];
   const totals = db.prepare(`SELECT CAST(COALESCE(SUM(l.value) FILTER (WHERE v.day < $from), 0) AS TEXT) AS opening,
     CAST(COALESCE(SUM(l.value), 0) AS TEXT) AS closing ${scope}`).get(params) as { opening: string; closing: string };
   const ledger = {
     opening: BigInt(totals.opening), closing: BigInt(totals.closing),
-    rows: rows.slice(0, PAGE_SIZE).map(({ method, reversal, reimbursement, ...row }) => ({
+    rows: (all ? rows : rows.slice(0, PAGE_SIZE)).map(({ method, reversal, reimbursement, ...row }) => ({
       ...row, running: BigInt(row.running), ...(reimbursement === null ? {} : { reimbursement }),
     })),
-    hasNext: rows.length > PAGE_SIZE,
+    hasNext: !all && rows.length > PAGE_SIZE,
   };
   if (!contractor) return ledger;
 
@@ -697,17 +720,17 @@ function getEmployeeLedger(db: DatabaseSync, firmId: number, input: Record<strin
   };
 }
 
-function getTrialBalance(db: DatabaseSync, firmId: number, input: Record<string, unknown>): TrialBalance {
-  const { to } = period(input);
+export function getTrialBalance(db: DatabaseSync, firmId: number, input: Record<string, unknown>): TrialBalance {
+  const { from, to } = period(input);
   const rows = db.prepare(`WITH balances AS (
       SELECT l.account_id, SUM(l.value) AS balance
       FROM vouchers v JOIN posting_lines l ON l.firm_id = v.firm_id AND l.voucher_id = v.id
-      WHERE v.firm_id = $firm AND ($to IS NULL OR v.day <= $to)
+      WHERE v.firm_id = $firm AND ($to IS NULL OR v.day <= $to) AND ($from IS NULL OR v.day >= $from)
       GROUP BY l.account_id
     )
     SELECT ${accountColumns}, CAST(COALESCE(b.balance, 0) AS TEXT) AS balance
     FROM accounts a LEFT JOIN balances b ON b.account_id = a.id WHERE a.firm_id = $firm ORDER BY a.name, a.id`)
-    .all({ firm: firmId, to }) as (Account & { balance: string })[];
+    .all({ firm: firmId, from, to }) as (Account & { balance: string })[];
   let debit = 0n;
   let credit = 0n;
   const accounts = rows.map(row => {
@@ -851,11 +874,12 @@ function confirmStatement(db: DatabaseSync, firmId: number, input: Record<string
     check(!getNamedAccount(db, firmId, bank.accountId, 'bank').archived, 'Choose an active bank account to review rows.');
     const voucherId = chosen ?? writeVoucher(db, firmId, key, { kind, day: row.day, memo: row.description, lines });
     db.prepare('UPDATE statement_rows SET voucher_id = ? WHERE firm_id = ? AND id = ?').run(voucherId, firmId, row.id);
+    db.prepare('INSERT INTO statement_match_history (statement_id, voucher_id) VALUES (?, ?)').run(row.id, voucherId);
     return getVoucher(db, firmId, voucherId);
   });
 }
 
-export function runAccountingCommand(db: DatabaseSync, firm: { id: number; archived: boolean }, command: BookCommand): BookResult {
+export function runAccountingCommand(db: DatabaseSync, firm: { id: number; archived: boolean }, command: BookCommand & { operation: Exclude<BookCommand['operation'], 'getReport'> }): BookResult {
   const firmId = firm.id;
   if (command.operation === 'getChart') return getChart(db, firmId);
   if (command.operation === 'getContractors') return getContractors(db, firmId);
@@ -903,7 +927,11 @@ export function runAccountingCommand(db: DatabaseSync, firm: { id: number; archi
     case 'getVoucher': return getVoucher(db, firmId, input.voucherId);
     case 'getDayBook': return getDayBook(db, firmId, input);
     case 'getLedger': return getLedger(db, firmId, input);
-    case 'getTrialBalance': return getTrialBalance(db, firmId, input);
+    case 'getTrialBalance': return getTrialBalance(db, firmId, { to: input.to });
+    case 'postInvoice': return postInvoice(db, firm, input);
+    case 'getInvoice': return getInvoice(db, firmId, input.voucherId);
+    case 'getInvoices': return getInvoices(db, firmId, input);
+    case 'applyBillPayment': return applyBillPayment(db, firm, input);
   }
 }
 
@@ -928,4 +956,242 @@ export function replayDemo(db: DatabaseSync, firmId: number, snapshot: string) {
       lines: voucher.lines.map(line => ({ accountId: line.account, siteId: line.site, value: line.value })),
     });
   }
+}
+
+type InvoiceRecord = { voucherId: number; firmId: number; partyId: number; side: InvoiceSide;
+  originalId: number | null; reversedById: number | null; day: string; amount: number; document: string };
+
+const invoiceColumns = `i.voucher_id AS voucherId, i.firm_id AS firmId, i.party_id AS partyId,
+  i.side, i.original_id AS originalId, r.id AS reversedById, v.day, v.amount, v.document`;
+
+function invoiceRecord(db: DatabaseSync, firmId: number, value: unknown) {
+  const row = db.prepare(`SELECT ${invoiceColumns} FROM invoice_records i
+    JOIN vouchers v ON v.id = i.voucher_id ${voucherReversal}
+    WHERE i.firm_id = ? AND i.voucher_id = ?`).get(firmId, id(value, 'invoice')) as InvoiceRecord | undefined;
+  check(row, 'Choose an invoice in this firm.');
+  return row;
+}
+
+export function readInvoiceSnapshot(row: Pick<InvoiceRecord, 'side' | 'day' | 'document' | 'amount'>): InvoiceSnapshot {
+  const saved = JSON.parse(row.document);
+  if ('issuer' in saved) return saved as InvoiceSnapshot;
+  // The prototype saved two issued documents before the desktop format existed.
+  const { id, name, owner, address, gstin } = saved.firm;
+  const amounts = (base: number, tax: Partial<InvoiceAmounts>, total?: number): InvoiceAmounts => ({
+    base, CGST: tax.CGST ?? 0, SGST: tax.SGST ?? 0, IGST: tax.IGST ?? 0,
+    total: total ?? base + (tax.CGST ?? 0) + (tax.SGST ?? 0) + (tax.IGST ?? 0),
+  });
+  return {
+    side: row.side, day: row.day, document: 'Invoice', originalId: null, originalNumber: null,
+    number: saved.number, issuer: { id, name, owner, address, gstin }, booking: { id, name },
+    party: saved.party, partyAddress: saved.party_address, partyGstin: saved.party_gstin, consumer: saved.consumer,
+    supply: saved.supply, taxMode: saved.tax_mode === 'split' ? 'split' : 'igst', totals: amounts(saved.totals.base, saved.totals, row.amount),
+    items: saved.items.map((item: { description: string; qty: string; rate: string; gst: string; unit: string;
+      base: number; tax: Partial<InvoiceAmounts> }) => ({
+      description: item.description, quantity: item.qty, unit: item.unit, rate: item.rate, gst: item.gst,
+      amounts: amounts(item.base, item.tax),
+    })),
+    allocations: [{ firmId: id, firmName: name, amount: saved.totals.base }],
+  };
+}
+
+function billActivity(db: DatabaseSync, billId: number) {
+  return db.prepare('SELECT voucherId, day, kind, amount, application FROM bill_movements WHERE bill_id = ? ORDER BY day, voucherId')
+    .all(billId) as (BillActivity & { application: number })[];
+}
+
+function validateBillTimeline(db: DatabaseSync, billId: number, applicationId?: number) {
+  let face = 0n;
+  let balance = 0n;
+  let affected = false;
+  const limit = BigInt(Number.MAX_SAFE_INTEGER);
+  for (const movement of billActivity(db, billId)) {
+    const amount = BigInt(movement.amount);
+    if (!movement.application) face += amount;
+    check(face >= 0n && face <= limit, 'The notes would put the invoiced value outside its allowed range.');
+    const previous = balance;
+    balance += amount;
+    check(balance >= -limit && balance <= limit, 'This entry would put the bill balance outside its allowed range.');
+    if (movement.voucherId === applicationId) affected = true;
+    if (affected && movement.application && movement.kind !== 'Reversal') {
+      check(amount < 0n ? previous > 0n && balance >= 0n : previous < 0n && balance <= 0n,
+        'The settlement exceeds the available bill balance on its voucher date.');
+    }
+  }
+}
+
+function getInvoice(db: DatabaseSync, firmId: number, value: unknown): IssuedInvoice {
+  const row = invoiceRecord(db, firmId, value);
+  const activity = row.originalId === null
+    ? billActivity(db, row.voucherId).map(({ application, ...movement }) => movement) : [];
+  return { voucherId: row.voucherId, reversedById: row.reversedById, snapshot: readInvoiceSnapshot(row), activity,
+    outstanding: row.originalId === null ? activity.reduce((sum, item) => sum + item.amount, 0) : null };
+}
+
+function getInvoices(db: DatabaseSync, firmId: number, input: Record<string, unknown>) {
+  const { from, to } = period(input);
+  const rows = db.prepare(`WITH issued AS (
+    SELECT i.voucher_id AS voucherId, i.number, i.side, COALESCE(v.document ->> '$.document', 'Invoice') AS document,
+      v.document ->> '$.party' AS party, v.day, v.amount, r.id AS reversedById,
+      CASE WHEN i.original_id IS NULL THEN
+        COALESCE((SELECT SUM(amount) FROM bill_movements WHERE bill_id = i.voucher_id
+          AND ($to IS NULL OR day <= $to)), 0) ELSE 0 END AS outstanding
+    FROM invoice_records i JOIN vouchers v ON v.id = i.voucher_id ${voucherReversal}
+    WHERE i.firm_id = $firm AND ($from IS NULL OR v.day >= $from) AND ($to IS NULL OR v.day <= $to)
+  ) SELECT * FROM issued WHERE NOT $payable OR (side = 'Purchase' AND outstanding > 0 AND reversedById IS NULL)
+    ORDER BY day DESC, voucherId DESC LIMIT $limit OFFSET $offset`)
+    .all({ firm: firmId, from, to, payable: input.payableOnly === true ? 1 : 0,
+      limit: PAGE_SIZE + 1, offset: pageOffset(input.page) }) as InvoiceRow[];
+  return { rows: rows.slice(0, PAGE_SIZE), hasNext: rows.length > PAGE_SIZE };
+}
+
+function invoiceFirm(db: DatabaseSync, value: unknown, label: string) {
+  const row = db.prepare('SELECT id, name, owner, address, gstin FROM firms WHERE id = ? AND archived = 0')
+    .get(id(value, label)) as (FirmDetails & { id: number }) | undefined;
+  check(row, 'Choose an active ' + label + '.');
+  return row;
+}
+
+function systemAccount(db: DatabaseSync, firmId: number, system: string, name: string, kind: string) {
+  const account = db.prepare('SELECT id FROM accounts WHERE firm_id = ? AND system = ?').get(firmId, system) ??
+    db.prepare(`INSERT INTO accounts (firm_id, system, name, kind) VALUES (?, ?, ?, ?)
+      ON CONFLICT (firm_id, kind, name) DO UPDATE SET system = excluded.system
+      WHERE accounts.system IS NULL RETURNING id`).get(firmId, system, name, kind);
+  check(account, 'The account ' + name + ' is reserved for another purpose.');
+  return account.id as number;
+}
+
+function postInvoice(db: DatabaseSync, firm: { id: number; archived: boolean }, input: Record<string, unknown>) {
+  const requestId = requestKey(input.requestId);
+  const side = INVOICE_SIDES.find(side => side === input.side);
+  check(side, 'Choose Sale or Purchase.');
+  const document = (['Invoice', 'Credit note', 'Debit note'] as const).find(kind => kind === input.document);
+  check(document, 'Choose an invoice or note type.');
+  const number = text(input.number, 'Invoice or note number', 80, true);
+  const voucherDay = day(input.day);
+  const issuerId = id(input.issuerId, 'issuer');
+  const originalId = document === 'Invoice' ? null : id(input.originalId, 'original invoice');
+  const party = text(input.party, 'Customer or supplier', 180, true);
+  const partyAddress = text(input.partyAddress, 'Party address', 1000);
+  const partyGstin = text(input.partyGstin, 'Party GSTIN', 32).toUpperCase();
+  const consumer = text(input.consumer, 'Consumer details', 1000);
+  const supply = text(input.supply, 'Place of supply', 180);
+  const taxMode = input.taxMode;
+  check(taxMode === 'split' || taxMode === 'igst', 'Choose CGST/SGST or IGST.');
+  check(Array.isArray(input.items) && input.items.length >= 1 && input.items.length <= 250, 'Enter 1 to 250 items.');
+  const items = input.items.map(raw => {
+    const line = fields(raw);
+    const item: InvoiceItem = {
+      description: text(line.description, 'Item description', 500, true), quantity: text(line.quantity, 'Quantity', 21, true),
+      unit: text(line.unit, 'Unit', 40, true), rate: text(line.rate, 'Rate', 21, true), gst: text(line.gst, 'GST', 21, true),
+    };
+    try { return { ...item, amounts: invoiceAmounts(item, taxMode) }; }
+    catch (error) { throw new BookInputError((error as Error).message); }
+  });
+  const mode = input.allocationMode;
+  check(mode === 'amount' || mode === 'percent', 'Choose an allocation method.');
+  check(Array.isArray(input.allocations) && input.allocations.length <= 250, 'Enter up to 250 allocations.');
+  const submitted = input.allocations.map(raw => {
+    const share = fields(raw);
+    return { firmId: id(share.firmId, 'beneficiary firm'), value: text(share.value, 'Allocation', 21, true) };
+  });
+  check(new Set(submitted.map(share => share.firmId)).size === submitted.length, 'Enter each beneficiary firm once.');
+  let totals: InvoiceAmounts;
+  let shares: number[];
+  try {
+    totals = invoiceTotals(items.map(item => item.amounts));
+    shares = submitted.length ? allocationAmounts(totals.base, mode, submitted.map(share => share.value)) : [totals.base];
+  } catch (error) { throw new BookInputError((error as Error).message); }
+  check(totals.base > 0, 'The pre-tax invoice value must be at least one paise.');
+
+  const request = JSON.stringify({ side, document, number, voucherDay, issuerId, originalId, party,
+    partyAddress, partyGstin, consumer, supply, taxMode, items, mode, submitted });
+  return transaction(db, () => {
+    const prior = db.prepare(`SELECT v.id, i.request_json AS request FROM vouchers v
+      LEFT JOIN invoice_records i ON i.voucher_id = v.id WHERE v.firm_id = ? AND v.request_id = ?`).get(firm.id, requestId);
+    if (prior) {
+      check(prior.request === request, 'This request ID is already used by a different voucher.');
+      return getInvoice(db, firm.id, prior.id);
+    }
+    check(!firm.archived, 'Choose an active firm to book this invoice.');
+    const issuer = invoiceFirm(db, issuerId, 'issuer');
+    const bookingFirm = invoiceFirm(db, firm.id, 'booking firm');
+    const booking = { id: bookingFirm.id, name: bookingFirm.name };
+    const original = originalId === null ? null : invoiceRecord(db, firm.id, originalId);
+    const source = original && readInvoiceSnapshot(original);
+    check(!original || (original.originalId === null && original.reversedById === null && original.side === side &&
+      voucherDay >= original.day && source?.party === party && source.issuer.id === issuerId),
+    'Choose an active original invoice with the same firm, issuer and party, dated on or before the note.');
+    const allocations = (submitted.length ? submitted : [{ firmId: firm.id }]).map(({ firmId }, index) => ({
+      firmId, firmName: invoiceFirm(db, firmId, 'beneficiary firm').name, amount: shares[index],
+    }));
+    const year = Number(voucherDay.slice(0, 4)) - (voucherDay.slice(5, 7) < '04' ? 1 : 0);
+    const numberKey = JSON.stringify([side, side === 'Sale' ? issuerId : firm.id,
+      side === 'Sale' ? '' : party, year, document, number]);
+    check(!db.prepare('SELECT 1 FROM invoice_records WHERE number_key = ?').get(numberKey),
+    'This invoice or note number is already in use.');
+    const partyAccount = original ? getAccount(db, firm.id, original.partyId, true) : (db.prepare(
+      `SELECT ${accountColumns} FROM accounts WHERE firm_id = ? AND kind = 'party' AND name = ? COLLATE NOCASE`)
+      .get(firm.id, party) as Account | undefined) ?? createAccount(db, firm.id, { name: party, kind: 'party' });
+    const sale = side === 'Sale';
+    const sign = (sale ? 1 : -1) * invoiceDirection(side, document);
+    const lines: Line[] = [{ accountId: partyAccount.id, siteId: null, value: sign * totals.total },
+      { accountId: systemAccount(db, firm.id, sale ? 'sales' : 'purchases', sale ? 'Sales revenue' : 'Purchases',
+        sale ? 'income' : 'expense'), siteId: null, value: -sign * totals.base }];
+    for (const tax of TAX_COMPONENTS.filter(tax => totals[tax] !== 0)) {
+      lines.push({ accountId: systemAccount(db, firm.id, (sale ? 'out' : 'in') + tax,
+        (sale ? 'Output ' : 'Input ') + tax, sale ? 'liability' : 'asset'), siteId: null, value: -sign * totals[tax] });
+    }
+    const snapshot: InvoiceSnapshot = { side, document, number, day: voucherDay, issuer, booking, originalId,
+      originalNumber: source?.number ?? null, party, partyAddress, partyGstin, consumer, supply, taxMode, items, totals, allocations };
+    const voucherId = writeVoucher(db, firm.id, requestId, {
+      day: voucherDay, kind: document === 'Invoice' ? side : document, memo: number + ' · ' + party, lines, document: snapshot,
+    });
+    db.prepare(`INSERT INTO invoice_records (voucher_id, firm_id, party_id, side, number, number_key, original_id, issuer_id, request_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(voucherId, firm.id, partyAccount.id, side, number, numberKey, originalId, issuerId, request);
+    const insert = db.prepare('INSERT INTO invoice_allocations (invoice_id, firm_id, amount) VALUES (?, ?, ?)');
+    for (const allocation of allocations) insert.run(voucherId, allocation.firmId, allocation.amount);
+    validateBillTimeline(db, originalId ?? voucherId);
+    return getInvoice(db, firm.id, voucherId);
+  });
+}
+
+function applyBillPayment(db: DatabaseSync, firm: { id: number; archived: boolean }, input: Record<string, unknown>) {
+  const requestId = requestKey(input.requestId);
+  const invoiceId = id(input.invoiceId, 'invoice');
+  const accountId = id(input.accountId, 'payment account');
+  const voucherDay = day(input.day);
+  const memo = text(input.memo, 'Narration', 500);
+  const amount = paise(input.amount);
+  check(amount > 0, 'Enter a positive bill payment.');
+  check(input.refund === undefined || typeof input.refund === 'boolean', 'Choose whether to apply a payment or a refund.');
+  return transaction(db, () => {
+    const invoice = invoiceRecord(db, firm.id, invoiceId);
+    check(invoice.originalId === null, 'Apply the payment to the original bill.');
+    const outgoing = (invoice.side === 'Purchase') !== (input.refund === true);
+    const value = outgoing ? -amount : amount;
+    const prior = db.prepare(`SELECT v.id, b.invoice_id AS invoiceId FROM vouchers v LEFT JOIN bill_applications b
+      ON b.voucher_id = v.id WHERE v.firm_id = ? AND v.request_id = ?`).get(firm.id, requestId);
+    const narration = memo || 'Bill ' + readInvoiceSnapshot(invoice).number;
+    if (prior) {
+      const voucher = getVoucher(db, firm.id, prior.id);
+      check(prior.invoiceId === invoiceId && voucher.day === voucherDay && voucher.memo === narration &&
+        voucher.lines.some(line => line.accountId === accountId && line.value === value),
+      'This request ID is already used by a different voucher.');
+      return voucher;
+    }
+    check(!firm.archived && invoice.reversedById === null, 'Choose an active bill.');
+    check(voucherDay >= invoice.day, 'The payment date must be on or after the invoice date.');
+    const funding = getAccount(db, firm.id, accountId, true);
+    check(funding.kind === 'bank' || funding.kind === 'cash', 'Choose a cashbook, cash account or bank account in this firm.');
+    const voucherId = writeVoucher(db, firm.id, requestId, {
+      day: voucherDay, kind: outgoing ? 'Payment' : 'Receipt', memo: narration, lines: [
+        { accountId, siteId: null, value }, { accountId: invoice.partyId, siteId: null, value: -value },
+      ],
+    });
+    db.prepare('INSERT INTO bill_applications (voucher_id, firm_id, invoice_id, amount) VALUES (?, ?, ?, ?)')
+      .run(voucherId, firm.id, invoiceId, amount);
+    validateBillTimeline(db, invoiceId, voucherId);
+    return getVoucher(db, firm.id, voucherId);
+  });
 }

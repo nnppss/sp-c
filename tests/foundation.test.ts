@@ -48,7 +48,7 @@ test('replays the prototype postings to the captured account and site balances',
 
 test('migrates fresh files, seeds only demo and preserves populated settings on reopen', () => {
   const live = openWorkspace(directory, 'live', fixture);
-  expect(live.prepare('PRAGMA user_version').get()).toEqual({ user_version: 5 });
+  expect(live.prepare('PRAGMA user_version').get()).toEqual({ user_version: 6 });
   expect(live.prepare('PRAGMA foreign_keys').get()).toEqual({ foreign_keys: 1 });
   expect(readWorkspace(live)).toEqual({ name: 'SP & Company', firms: [], activeFirmId: null, demo: null });
   live.prepare("UPDATE workspace_settings SET value = 'Office books' WHERE key = 'name'").run();

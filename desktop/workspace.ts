@@ -35,12 +35,15 @@ export type WorkspaceCommand =
 
 export type WorkerReply = { id: number } & ({ result: Workspace | BookResult } | { error: string });
 
+export type DesktopOutput = { kind: 'print' | 'pdf'; title: string } | { kind: 'csv'; title: string; csv: string };
+
 export type WorkspaceBridge = BooksBridge & {
   read(kind: WorkspaceKind): Promise<Workspace>;
   saveName(kind: WorkspaceKind, name: string): Promise<Workspace>;
   saveFirm(kind: WorkspaceKind, id: number | null, details: FirmDetails): Promise<Workspace>;
   selectFirm(kind: WorkspaceKind, id: number): Promise<Workspace>;
   removeFirm(kind: WorkspaceKind, id: number): Promise<Workspace>;
+  output(input: DesktopOutput): Promise<boolean>;
   isMac: boolean;
 };
 

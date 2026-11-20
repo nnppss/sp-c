@@ -3,7 +3,7 @@ import type { FormEvent } from 'react';
 import { createRoot } from 'react-dom/client';
 import { NAME_LIMIT, WORKSPACES, workspaceName } from '../desktop/workspace';
 import type { Workspace, WorkspaceBridge, WorkspaceKind } from '../desktop/workspace';
-import { Books, DAY_BOOK, TRIAL_BALANCE } from './books';
+import { Books, DAY_BOOK } from './books';
 import type { BookView } from './books';
 import { Cashbooks, CASHBOOK_DIRECTORY } from './cashbooks';
 import type { CashbookView } from './cashbooks';
@@ -13,6 +13,11 @@ import { Employees } from './employees';
 import type { EmployeeView } from './employees';
 import { Bank } from './bank';
 import type { BankView } from './bank';
+import { Invoices, INVOICE_REGISTER } from './invoices';
+import type { InvoiceView } from './invoices';
+import { Reports, REPORT_HOME } from './reports';
+import type { ReportView } from './reports';
+import type { ReportSource } from '../desktop/report-model';
 import { NAMED_DIRECTORY } from './named-books';
 import { DemoBalances, Firms } from './firms';
 import './style.css';
@@ -26,7 +31,7 @@ type Page = (typeof PAGES)[number];
 type Entry = {
   page: Page; focus?: string; selection?: [number, number];
   book?: BookView; contractor?: ContractorView; cashbook?: CashbookView; firmId?: number; archivedFirmId?: number;
-  employee?: EmployeeView; bank?: BankView;
+  employee?: EmployeeView; bank?: BankView; invoice?: InvoiceView; report?: ReportView; scopeFirmId?: number;
 };
 const labels = { live: 'Live', demo: 'Demo' };
 const shortcuts = window.workspaces.isMac
@@ -46,14 +51,17 @@ function WorkspaceShell({ kind, switchWorkspace }: { kind: WorkspaceKind; switch
   const changing = useRef(false);
   const availableFirms = workspace?.firms.filter(firm => !firm.archived) ?? [];
   const activeDemo = workspace?.demo && workspace.demo.firmId === workspace.activeFirmId ? workspace.demo : null;
-  const booksPage = entry.page === 'Vouchers' || entry.page === 'Reports';
+  const booksPage = entry.page === 'Vouchers';
+  const reportsPage = entry.page === 'Reports';
+  const invoicesPage = entry.page === 'Sale & Purchase';
   const contractorsPage = entry.page === 'Contractors';
   const cashbooksPage = entry.page === 'Cashbooks';
   const employeesPage = entry.page === 'Employees';
   const bankPage = entry.page === 'Bank';
-  const bookFirm = workspace?.firms.find(firm => firm.id === (entry.archivedFirmId ?? workspace.activeFirmId));
-  const bookView = entry.firmId === bookFirm?.id && entry.book ? entry.book
-    : entry.page === 'Reports' ? TRIAL_BALANCE : DAY_BOOK;
+  const bookFirm = workspace?.firms.find(firm => firm.id === (entry.scopeFirmId ?? entry.archivedFirmId ?? workspace.activeFirmId));
+  const bookView = entry.firmId === bookFirm?.id && entry.book ? entry.book : DAY_BOOK;
+  const invoiceView = entry.firmId === bookFirm?.id && entry.invoice ? entry.invoice : INVOICE_REGISTER;
+  const reportView = entry.report ?? REPORT_HOME;
   const contractorView = entry.firmId === bookFirm?.id && entry.contractor ? entry.contractor : CONTRACTOR_DIRECTORY;
   const cashbookView = entry.firmId === bookFirm?.id && entry.cashbook ? entry.cashbook : CASHBOOK_DIRECTORY;
   const employeeView = entry.firmId === bookFirm?.id && entry.employee ? entry.employee : NAMED_DIRECTORY;
@@ -90,7 +98,8 @@ function WorkspaceShell({ kind, switchWorkspace }: { kind: WorkspaceKind; switch
   }
 
   function navigate(page: Page) {
-    if (page === entry.page && !entry.archivedFirmId &&
+    if (page === entry.page && !entry.archivedFirmId && !entry.scopeFirmId &&
+        !(invoicesPage && invoiceView.name !== 'register') &&
         !(contractorsPage && contractorView.name !== 'directory') && !(cashbooksPage && cashbookView.name !== 'directory') &&
         !(employeesPage && employeeView.name !== 'directory') && !(bankPage && bankView.name !== 'directory')) return;
     setHistory({ entries: [...rememberFocus().slice(0, index + 1), { page }], index: index + 1 });
@@ -102,7 +111,7 @@ function WorkspaceShell({ kind, switchWorkspace }: { kind: WorkspaceKind; switch
   }
 
   function openBook(view: BookView, replace = false, page: Page = entry.page) {
-    openEntry({ page, book: view, firmId: bookFirm?.id, archivedFirmId: entry.archivedFirmId }, replace);
+    openEntry({ page, book: view, firmId: bookFirm?.id, archivedFirmId: entry.archivedFirmId, scopeFirmId: entry.scopeFirmId }, replace);
   }
 
   function openContractor(view: ContractorView, replace = false) {
@@ -112,16 +121,36 @@ function WorkspaceShell({ kind, switchWorkspace }: { kind: WorkspaceKind; switch
   }
 
   function openCashbook(view: CashbookView, replace = false) {
-    openEntry({ page: 'Cashbooks', cashbook: view, firmId: bookFirm?.id, archivedFirmId: entry.archivedFirmId }, replace);
+    openEntry({ page: 'Cashbooks', cashbook: view, firmId: bookFirm?.id, archivedFirmId: entry.archivedFirmId, scopeFirmId: entry.scopeFirmId }, replace);
   }
 
   function openEmployee(view: EmployeeView, replace = false) {
-    openEntry({ page: 'Employees', employee: view, firmId: bookFirm?.id, archivedFirmId: entry.archivedFirmId }, replace);
+    openEntry({ page: 'Employees', employee: view, firmId: bookFirm?.id, archivedFirmId: entry.archivedFirmId, scopeFirmId: entry.scopeFirmId }, replace);
   }
 
   function openBank(view: BankView, replace = false) {
     const focus = view.name === 'review' ? view.confirmation && !view.editing ? 'statement-action' : 'bank-offset' : undefined;
-    openEntry({ page: 'Bank', bank: view, focus, firmId: bookFirm?.id, archivedFirmId: entry.archivedFirmId }, replace);
+    openEntry({ page: 'Bank', bank: view, focus, firmId: bookFirm?.id, archivedFirmId: entry.archivedFirmId, scopeFirmId: entry.scopeFirmId }, replace);
+  }
+
+  function openInvoice(view: InvoiceView, replace = false, firmId = bookFirm?.id) {
+    openEntry({ page: 'Sale & Purchase', invoice: view, firmId, scopeFirmId: firmId }, replace);
+  }
+
+  function openReport(view: ReportView, firmId: number, replace = false) {
+    openEntry({ page: 'Reports', report: view, scopeFirmId: firmId }, replace);
+  }
+
+  function reportSource(source: ReportSource) {
+    const { firmId } = source;
+    switch (source.view) {
+      case 'invoice': return openInvoice({ name: 'issued', voucherId: source.id }, false, firmId);
+      case 'voucher': return openEntry({ page: 'Vouchers', book: { name: 'voucher', voucherId: source.id }, firmId, scopeFirmId: firmId });
+      case 'ledger': return openReport({ query: { name: 'ledger', accountId: source.id, ...source.period } }, firmId);
+      case 'pnl': return openReport({ query: { name: 'pnl', ...source.period } }, firmId);
+      case 'statement': return openEntry({ page: 'Bank', bank: { name: 'review', accountId: source.accountId, rowId: source.id,
+        requestId: crypto.randomUUID() }, firmId, scopeFirmId: firmId });
+    }
   }
 
   function openArchivedBooks(firmId: number) {
@@ -166,7 +195,7 @@ function WorkspaceShell({ kind, switchWorkspace }: { kind: WorkspaceKind; switch
   function selectFirm(id: number) {
     if (id === workspace?.activeFirmId || changing.current) return;
     void changeWorkspace(() => window.workspaces.selectFirm(kind, id));
-    if (entry.archivedFirmId) navigate(entry.page);
+    if (entry.archivedFirmId || entry.scopeFirmId) navigate(entry.page);
   }
 
   return (
@@ -180,9 +209,9 @@ function WorkspaceShell({ kind, switchWorkspace }: { kind: WorkspaceKind; switch
         move(event.key === back ? -1 : 1);
       } else if (primary && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 's' &&
           (entry.page === 'Workspace settings' || entry.page === 'Firms' || booksPage || contractorsPage || cashbooksPage ||
-            employeesPage || bankPage)) {
+            employeesPage || bankPage || invoicesPage)) {
         event.preventDefault();
-        const formId = booksPage ? '#book-form' : contractorsPage ? '#contractor-form'
+        const formId = invoicesPage ? '#invoice-form' : booksPage ? '#book-form' : contractorsPage ? '#contractor-form'
           : cashbooksPage ? '#cashbook-form' : employeesPage || bankPage ? '#module-form'
             : entry.page === 'Firms' ? '#firm-form' : '#settings-form';
         document.querySelector<HTMLFormElement>(formId)?.requestSubmit();
@@ -269,7 +298,8 @@ function WorkspaceShell({ kind, switchWorkspace }: { kind: WorkspaceKind; switch
                 {bookFirm.archived && <button id="archived-bank" className="secondary"
                   onClick={() => openBank(NAMED_DIRECTORY)}>Archived bank accounts</button>}
                 <Books key={bookFirm.id} workspace={kind} firm={bookFirm} view={bookView} savedFocus={entry.focus}
-                  shortcut={shortcuts.save} open={view => openBook(view)} replace={view => openBook(view, true)} back={() => move(-1)} />
+                  shortcut={shortcuts.save} showInvoice={voucherId => openInvoice({ name: 'issued', voucherId })}
+                  open={view => openBook(view)} replace={view => openBook(view, true)} back={() => move(-1)} />
               </>
             : <p className="intro">Create or select a firm to open its books.</p>)}
           {contractorsPage && workspace && (bookFirm
@@ -280,6 +310,7 @@ function WorkspaceShell({ kind, switchWorkspace }: { kind: WorkspaceKind; switch
           {cashbooksPage && workspace && (bookFirm
             ? <Cashbooks key={bookFirm.id} workspace={kind} firm={bookFirm} firms={workspace.firms} view={cashbookView}
                 savedFocus={entry.focus} shortcut={shortcuts.save} open={openCashbook} back={() => move(-1)}
+                payBill={cashbookId => openInvoice({ name: 'register', query: { payableOnly: true }, cashbookId })}
                 showVoucher={(voucherId, saved) => openBook({ name: 'voucher', voucherId, saved }, saved, 'Vouchers')} />
             : <p className="intro">Create or select a firm to open its cashbooks.</p>)}
           {employeesPage && workspace && (bookFirm
@@ -295,11 +326,17 @@ function WorkspaceShell({ kind, switchWorkspace }: { kind: WorkspaceKind; switch
                 showVoucher={(voucherId, saved) => openBook({ name: 'voucher', voucherId, saved }, saved, 'Vouchers')} />
             : <p className="intro">Create or select a firm to open its bank accounts.</p>)}
           {(entry.page === 'Workspace settings' || entry.page === 'Firms' || booksPage || contractorsPage || cashbooksPage ||
-            employeesPage || bankPage) &&
+            employeesPage || bankPage || invoicesPage || reportsPage) &&
             !workspace && !error && <p role="status">Opening workspace…</p>}
-          {entry.page === 'Sale & Purchase' && (
-            <p className="intro">This module is awaiting implementation.</p>
-          )}
+          {invoicesPage && workspace && (bookFirm
+            ? <Invoices key={bookFirm.id} workspace={kind} firm={bookFirm} firms={workspace.firms} view={invoiceView}
+                savedFocus={entry.focus} shortcut={shortcuts.save} open={openInvoice} back={() => move(-1)}
+                showVoucher={(voucherId, saved) => openBook({ name: 'voucher', voucherId, saved }, saved, 'Vouchers')} />
+            : <p className="intro">Create or select a firm to enter its invoices.</p>)}
+          {reportsPage && workspace && (bookFirm
+            ? <Reports key={bookFirm.id} workspace={kind} firm={bookFirm} firms={workspace.firms} view={reportView}
+                savedFocus={entry.focus} open={openReport} source={reportSource} />
+            : <p className="intro">Create or select a firm to open its reports.</p>)}
         </main>
         <footer><span className="offline-dot" aria-hidden="true" /> Offline · Local storage</footer>
       </div>

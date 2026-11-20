@@ -1,10 +1,13 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readdir, rm } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { _electron as electron } from 'playwright';
 import { utils, write } from 'xlsx';
 
+const execFileAsync = promisify(execFile);
 const target = process.argv[2];
 if (!target) throw new Error('Pass the path to the packaged executable, or . for the development build.');
 const profile = await mkdtemp(join(tmpdir(), 'sp-accounts-desktop-'));
@@ -714,15 +717,290 @@ async function exerciseBank(page, save, back) {
   }
 }
 
+async function report(page, name, { from, to, firm, combined } = {}) {
+  const filters = page.locator('.report-view form');
+  await filters.getByLabel('Report', { exact: true }).selectOption({ label: name });
+  if (combined !== undefined) await filters.getByLabel('Allocation scope').selectOption(combined ? 'all' : 'one');
+  if (firm) await filters.locator('#report-firm').selectOption({ label: firm });
+  if (from) await filters.getByLabel('From', { exact: true }).fill(from);
+  if (to) await filters.locator('#report-to').fill(to);
+  await pressButton(page, 'Apply filters');
+  await page.getByRole('heading', { name, exact: true, level: 2 }).waitFor();
+}
+
+async function outputFiles(page) {
+  const filenames = await app.evaluate(({ dialog, BrowserWindow }, directory) => {
+    const current = BrowserWindow.getAllWindows()[0].webContents;
+    const path = (name) => directory + '/' + name;
+    dialog.showSaveDialog = async (_window, options) => ({
+      canceled: false, filePath: path(options.defaultPath.endsWith('.csv') ? 'report.csv' : 'export.pdf'),
+    });
+    current.print = (options, callback) => {
+      if (options.pageSize !== 'A4') { callback(false, 'Unexpected print size.'); return; }
+      current.printToPDF({ pageSize: 'A4', preferCSSPageSize: true }).then(async pdf => {
+        const fs = process.getBuiltinModule('node:fs/promises');
+        await fs.writeFile(path('printed.pdf'), pdf);
+        callback(true, '');
+      }).catch(error => callback(false, error.message));
+    };
+    return { pdf: path('export.pdf'), print: path('printed.pdf'), csv: path('report.csv') };
+  }, profile);
+  const pdf = page.getByRole('button', { name: 'Save PDF', exact: true });
+  await pdf.click();
+  await page.getByText('PDF saved.', { exact: true }).waitFor();
+  for (const key of ['pdf', 'print']) {
+    if (key === 'print') {
+      await pressButton(page, 'Print');
+      const status = page.locator('.print-control').getByRole('status').or(page.locator('.print-control').getByRole('alert'));
+      await status.waitFor();
+      assert.equal(await status.textContent(), 'Document sent to the printer.');
+    }
+    assert.equal((await readFile(filenames[key])).subarray(0, 5).toString(), '%PDF-');
+  }
+  return filenames;
+}
+
+async function pdfText(filename) {
+  if (process.platform !== 'darwin') return undefined;
+  const { stdout } = await execFileAsync('/usr/bin/osascript', ['-l', 'JavaScript', '-e', `
+    ObjC.import('PDFKit');
+    function run(argv) {
+      const document = $.PDFDocument.alloc.initWithURL($.NSURL.fileURLWithPath(argv[0]));
+      const pages = [];
+      for (let i = 0; i < document.pageCount; i++) pages.push(ObjC.unwrap(document.pageAtIndex(i).string));
+      return pages.join('\\n');
+    }
+  `, filename]);
+  return stdout.replace(/\s+/g, ' ');
+}
+
+async function exerciseInvoicesAndReports(page, save, back) {
+  const day = '2026-11-20';
+  await choosePage(page, 'Cashbooks');
+  await pressButton(page, 'New cashbook');
+  await page.getByLabel('Cashbook name').fill('Invoice cash');
+  await page.getByLabel('Custodian', { exact: true }).fill('Vikram');
+  await page.getByLabel('Opening date').fill('2026-11-17');
+  await page.getByLabel('Opening cash (₹)').fill('10000');
+  await page.keyboard.press(save);
+  await page.getByRole('heading', { name: 'Invoice cash', exact: true }).waitFor();
+
+  await choosePage(page, 'Sale & Purchase');
+  await pressButton(page, 'New purchase');
+  const form = page.locator('#invoice-form');
+  await form.getByLabel('Invoice or note number').waitFor();
+  const fieldInOrder = async (label, value, next) => {
+    const field = form.getByLabel(label, { exact: true });
+    assert.equal(await field.evaluate(node => node === document.activeElement), true, label);
+    if (value !== null) await field.fill(value);
+    await page.keyboard.press('Enter');
+    if (next) assert.equal(await form.getByLabel(next, { exact: true }).evaluate(node => node === document.activeElement), true, next);
+  };
+  await fieldInOrder('Invoice or note number', 'VE-2026-8', 'Invoice date');
+  await fieldInOrder('Invoice date', day, 'Issuer');
+  await fieldInOrder('Issuer', null, 'Supplier');
+  await fieldInOrder('Supplier', 'Vikram Enterprises', 'Party address');
+  await fieldInOrder('Party address', 'Vendor Lane, Agra', 'Party GSTIN');
+  await fieldInOrder('Party GSTIN', '09ABCDE1234F1Z5', 'Consumer details');
+  await fieldInOrder('Consumer details', 'Yamuna site office', 'Description');
+  await page.keyboard.press('Shift+Tab');
+  assert.equal(await form.getByLabel('Consumer details').evaluate(node => node === document.activeElement), true);
+  await page.keyboard.press('Enter');
+  await fieldInOrder('Description', 'Steel supply', 'Quantity');
+  await fieldInOrder('Quantity', '2.5', 'Unit');
+  await fieldInOrder('Unit', 't', 'Rate (₹)');
+  await fieldInOrder('Rate (₹)', '40000', 'GST (%)');
+  await fieldInOrder('GST (%)', '18', 'GST treatment');
+  await fieldInOrder('GST treatment', null, 'Place of supply');
+  await fieldInOrder('Place of supply', 'Agra', 'Booking firm');
+  assert.equal(await form.getByLabel('Booking firm').locator('option:checked').textContent(), 'Firm A');
+  await fieldInOrder('Booking firm', null, 'Management allocation');
+  await page.keyboard.press('ArrowDown');
+  assert.equal(await form.getByLabel('Management allocation').inputValue(), 'amount');
+  await page.keyboard.press('Enter');
+  assert.equal(await form.locator('#beneficiary-0').evaluate(node => node === document.activeElement), true);
+  await form.locator('#share-0').fill('60000');
+  await pressButton(page, 'Add allocation');
+  await form.locator('#beneficiary-1').selectOption({ label: 'Firm B' });
+  await form.locator('#share-1').fill('40000');
+  await form.getByText('₹1,18,000', { exact: true }).waitFor();
+  await page.keyboard.press(save);
+  await page.getByText('Issued copy saved.').waitFor();
+  const invoice = page.getByRole('table', { name: 'Invoice line items' });
+  assert.deepEqual(await invoice.locator('tfoot td').allTextContents(), ['₹1,00,000', '₹9,000', '₹9,000', '₹1,18,000']);
+  assert.deepEqual(await page.getByRole('table', { name: 'Management allocation' }).locator('tbody td').allTextContents(),
+    ['₹60,000', '₹40,000']);
+  await pressButton(page, 'Open posting voucher');
+  const posting = page.getByRole('table', { name: 'Posting lines' });
+  await posting.waitFor();
+  assert.deepEqual(await posting.locator('tbody th').allTextContents(), ['Vikram Enterprises', 'Purchases', 'Input CGST', 'Input SGST']);
+  assert.deepEqual(await posting.locator('tfoot td').allTextContents(), ['₹1,18,000', '₹1,18,000']);
+
+  await choosePage(page, 'Cashbooks');
+  await pressButton(page, 'Invoice cash');
+  await pressButton(page, 'Pay supplier bill');
+  await pressButton(page, 'VE-2026-8');
+  await page.getByRole('heading', { name: 'Apply bill payment · VE-2026-8', exact: true }).waitFor();
+  assert.equal(await page.getByLabel('Cashbook or bank account').locator('option:checked').textContent(), 'Invoice cash');
+  await page.getByLabel('Voucher date').fill(day);
+  await page.getByLabel('Amount (₹)', { exact: true }).fill('6500');
+  await page.getByLabel('Narration').fill('Invoice instalment');
+  await page.keyboard.press(save);
+  await posting.waitFor();
+  assert.deepEqual(await posting.locator('tbody th').allTextContents(), ['Invoice cash', 'Vikram Enterprises']);
+  await pressButton(page, 'Open linked invoice');
+  await page.getByText('₹1,11,500', { exact: true }).waitFor();
+
+  await choosePage(page, 'Sale & Purchase');
+  await pressButton(page, 'New sale');
+  await form.getByLabel('Invoice or note number').fill('A-2026-8');
+  await form.getByLabel('Invoice date').fill(day);
+  await form.getByLabel('Customer', { exact: true }).fill('Aarav Projects');
+  await form.getByLabel('Description', { exact: true }).fill('Survey services');
+  await form.getByLabel('Quantity', { exact: true }).fill('2');
+  await form.getByLabel('Unit', { exact: true }).fill('visit');
+  await form.getByLabel('Rate (₹)', { exact: true }).fill('5000');
+  await form.getByLabel('GST (%)', { exact: true }).fill('18');
+  await form.getByLabel('GST treatment').selectOption('igst');
+  await page.keyboard.press(save);
+  await page.getByText('Issued copy saved.').waitFor();
+  const issued = page.getByRole('article', { name: 'Issued document' });
+  const original = await issued.innerText();
+  assert.match(original, /12 Yamuna Road/);
+  assert.deepEqual(await invoice.locator('tfoot td').allTextContents(), ['₹10,000', '₹1,800', '₹11,800']);
+  await choosePage(page, 'Firms');
+  await pressButton(page, 'Edit Firm A');
+  await page.getByLabel('Address', { exact: true }).fill('99 New Address, Agra');
+  await page.keyboard.press(save);
+  await page.getByText('Firm saved.', { exact: true }).waitFor();
+  await choosePage(page, 'Sale & Purchase');
+  await pressButton(page, 'A-2026-8');
+  await issued.waitFor();
+  assert.equal(await issued.innerText(), original);
+
+  let files = await outputFiles(page);
+  const firstPrint = await pdfText(files.print);
+  const firstPDF = await pdfText(files.pdf);
+  if (firstPDF !== undefined) {
+    assert.equal(firstPrint, firstPDF);
+    assert.ok(firstPDF.replace(/\s+/g, '').includes('12YamunaRoad'));
+    assert.match(firstPDF.replace(/\s+/g, ''), /₹11,800/);
+    assert.doesNotMatch(firstPDF, /99 New Address|Management allocation|Save PDF/);
+  }
+
+  await choosePage(page, 'Reports');
+  await report(page, 'Outstanding bills', { to: day });
+  const payables = page.getByRole('table', { name: 'Payables' });
+  assert.deepEqual(await payables.locator('tfoot td').allTextContents(),
+    ['—', '—', '₹1,18,000', '₹0', '₹6,500', '₹1,11,500']);
+  await report(page, 'Balance sheet', { to: day });
+  const balance = await page.getByRole('table', { name: 'Balance check' }).locator('tfoot td').allTextContents();
+  assert.equal(balance[0], balance[1]);
+  assert.equal(balance[2], '₹0');
+  await report(page, 'Profit and loss', { from: day, to: day });
+  await page.getByRole('table', { name: 'Expenses' }).getByRole('row').filter({ hasText: /^Purchases/ })
+    .getByText('₹1,00,000', { exact: true }).waitFor();
+  await report(page, 'GST summary', { from: day, to: day });
+  assert.deepEqual(await page.getByRole('table', { name: 'GST totals' }).locator('tfoot td').allTextContents(),
+    ['−₹9,000', '−₹9,000', '₹1,800']);
+  await report(page, 'Trial balance', { to: day });
+  const trial = page.getByRole('table', { name: 'Trial balance' });
+  const trialTotal = await trial.locator('tfoot td').allTextContents();
+  assert.equal(trialTotal[0], trialTotal[1]);
+  const purchases = trial.getByRole('row').filter({ hasText: /^Purchases/ });
+  await purchases.getByRole('button', { name: 'Purchases', exact: true }).click();
+  await page.getByRole('heading', { name: 'Account ledger', exact: true }).waitFor();
+  const ledger = page.getByRole('table', { name: 'Purchases ledger' });
+  await ledger.waitFor();
+  assert.equal(await ledger.locator('tfoot tr').last().locator('td').last().textContent(), '₹1,00,000');
+  await page.keyboard.press(back);
+  await trial.waitFor();
+  assert.equal(await purchases.getByRole('button').evaluate(node => node === document.activeElement), true);
+
+  await report(page, 'Purchase register', { from: day, to: day });
+  assert.deepEqual((await page.getByRole('table', { name: 'Purchase register' }).locator('tfoot td').allTextContents()).slice(3, 8),
+    ['₹1,00,000', '₹9,000', '₹9,000', '₹0', '₹1,18,000']);
+  await report(page, 'Sales register', { from: day, to: day });
+  assert.deepEqual((await page.getByRole('table', { name: 'Sales register' }).locator('tfoot td').allTextContents()).slice(3, 8),
+    ['₹10,000', '₹0', '₹0', '₹1,800', '₹11,800']);
+
+  await report(page, 'Firm allocations', { from: day, to: day, combined: true });
+  const allAllocations = page.getByRole('table', { name: 'Allocated by beneficiary' });
+  assert.deepEqual(await allAllocations.locator('tfoot td').allTextContents(), ['₹10,000', '₹1,00,000', '₹1,10,000']);
+  const allocations = page.getByRole('table', { name: 'Allocation sources' });
+  assert.equal(await allocations.getByRole('button', { name: 'VE-2026-8', exact: true }).count(), 2);
+  await allocations.getByRole('row').filter({ hasText: 'Firm B' }).getByRole('button', { name: 'VE-2026-8' }).click();
+  await page.getByRole('heading', { name: 'Purchase invoice VE-2026-8', exact: true }).waitFor();
+  await page.keyboard.press(back);
+  await allAllocations.waitFor();
+  files = await outputFiles(page);
+  await pressButton(page, 'Export CSV');
+  await page.getByText('CSV exported.', { exact: true }).waitFor();
+  const csv = await readFile(files.csv, 'utf8');
+  assert.match(csv, /"Total allocated",10000\.00,100000\.00,110000\.00/);
+  assert.match(csv, /"Firm B",40000\.00/);
+  const print = await pdfText(files.print);
+  const pdf = await pdfText(files.pdf);
+  if (pdf !== undefined) {
+    assert.equal(print, pdf);
+    for (const text of ['₹10,000', '₹1,00,000', '₹1,10,000', '₹40,000', 'VE-2026-8']) assert.ok(pdf.replace(/\s+/g, '').includes(text), text);
+    assert.doesNotMatch(pdf, /Apply filters|Export CSV/);
+  }
+  await report(page, 'Firm allocations', { from: day, to: day, combined: false, firm: 'Firm B' });
+  assert.deepEqual(await allAllocations.locator('tfoot td').allTextContents(), ['₹0', '₹40,000', '₹40,000']);
+  await allocations.getByRole('button', { name: 'VE-2026-8', exact: true }).click();
+  await page.getByRole('heading', { name: 'Purchase invoice VE-2026-8', exact: true }).waitFor();
+
+  await choosePage(page, 'Reports');
+  await report(page, 'Bank reconciliation', { from: day, to: '2026-11-23', firm: 'SP & Company (archived)' });
+  const statement = page.getByRole('table', { name: 'Statement rows' });
+  await statement.getByText('Pending deposit', { exact: true }).waitFor();
+  const matched = statement.getByRole('button', { name: /^#/ }).first();
+  const matchedNumber = await matched.textContent();
+  await matched.click();
+  await page.getByRole('heading', { name: new RegExp(matchedNumber + '$') }).waitFor();
+
+  await choosePage(page, 'Sale & Purchase');
+  await pressButton(page, 'A-2026-8');
+  await pressButton(page, 'Create credit note');
+  await form.getByLabel('Invoice or note number').fill('A-CN-8');
+  await form.getByLabel('Invoice date').fill('2026-11-21');
+  await form.getByLabel('Description', { exact: true }).fill('Survey price adjustment');
+  await form.getByLabel('Quantity', { exact: true }).fill('1');
+  await form.getByLabel('Unit', { exact: true }).fill('visit');
+  await form.getByLabel('Rate (₹)', { exact: true }).fill('1000');
+  await form.getByLabel('GST (%)', { exact: true }).fill('18');
+  await page.keyboard.press(save);
+  await page.getByRole('heading', { name: 'Credit note · Sale A-CN-8', exact: true }).waitFor();
+  await pressButton(page, 'Open original invoice');
+  await page.getByText('₹10,620', { exact: true }).waitFor();
+
+  await app.close();
+  app = undefined;
+  const reopened = await launch();
+  await reopened.getByRole('button', { name: 'Demo', exact: true }).click();
+  await activeFirm(reopened, 'Firm A');
+  await choosePage(reopened, 'Sale & Purchase');
+  await pressButton(reopened, 'A-2026-8');
+  assert.equal(await reopened.getByRole('article', { name: 'Issued document' }).innerText(), original);
+  await reopened.getByText('₹10,620', { exact: true }).waitFor();
+  await choosePage(reopened, 'Sale & Purchase');
+  await pressButton(reopened, 'VE-2026-8');
+  await reopened.getByText('₹1,11,500', { exact: true }).waitFor();
+
+  console.log('Desktop sample: trial balance ' + trialTotal.join(' / ') + ', assets and funding ' + balance.slice(0, 2).join(' / ') + '.');
+  console.log('Phases 8 and 9 passed: keyboard invoice entry, cashbook bill payment, issued address reprint, reconciled reports and source links, and PDF/CSV output.');
+}
+
 try {
   let page = await launch();
   await heading(page, 'SP & Company');
   assert.match(await page.locator('footer').innerText(), /Offline/);
   assert.deepEqual(await page.evaluate(() => ({ bridge: Object.keys(window.workspaces).sort(), require: typeof window.require })),
-    { bridge: ['confirmStatement', 'createAccount', 'createCashbook', 'getCashbookLedger', 'getCashbooks',
-      'getChart', 'getContractorLedger', 'getContractors', 'getDayBook', 'getEmployeeLedger', 'getLedger',
-      'getNamedAccounts', 'getStatement', 'getStatementMatches', 'getStatements', 'getTrialBalance', 'getVoucher',
-      'importStatement', 'isMac', 'postBank', 'postEmployee', 'postVoucher', 'previewStatement', 'read', 'removeCashbook',
+    { bridge: ['applyBillPayment', 'confirmStatement', 'createAccount', 'createCashbook', 'getCashbookLedger', 'getCashbooks',
+      'getChart', 'getContractorLedger', 'getContractors', 'getDayBook', 'getEmployeeLedger', 'getInvoice', 'getInvoices', 'getLedger',
+      'getNamedAccounts', 'getReport', 'getStatement', 'getStatementMatches', 'getStatements', 'getTrialBalance', 'getVoucher',
+      'importStatement', 'isMac', 'output', 'postBank', 'postEmployee', 'postInvoice', 'postVoucher', 'previewStatement', 'read', 'removeCashbook',
       'removeContractor', 'removeFirm', 'removeNamedAccount', 'reverseVoucher', 'saveCashbookCustodian', 'saveContractor',
       'saveFirm', 'saveName', 'saveNamedAccount', 'selectFirm'], require: 'undefined' });
   assert.equal(await page.evaluate(() => window.workspaces.read('../live').then(() => false, () => true)), true);
@@ -891,6 +1169,7 @@ try {
   await pressButton(page, 'Company cash held');
   assert.equal(await page.locator('.book-balances dd').innerText(), '₹2,500');
   assert.deepEqual((await readdir(join(profile, 'workspaces'))).filter(name => name.endsWith('.sqlite3')).sort(), ['demo.sqlite3', 'live.sqlite3']);
+  await exerciseInvoicesAndReports(page, save, back);
   console.log('Desktop smoke passed: offline workspaces and firms, vouchers and reversals, contractors, cashbooks, employees, CSV/XLSX bank review and source drill-down after restart.');
 } finally {
   try {

@@ -13,8 +13,8 @@
 | 5. Cashbooks | Verified | Vikram holds ₹2,500 after the handover, expense and return. Total firm cash fell only by the ₹6,500 expense. |
 | 6. Employees | Verified | Vikram’s salary and advance settled while he retained ₹2,500 in company cash. The sample pilot is ready for accountant feedback. |
 | 7. Bank | Verified | CSV and XLSX statement rows can be posted or matched, and pending rows survive restart. |
-| 8. Sale & Purchase | Planned | Printable GST invoices support bill payments and pre-tax allocations across firms. |
-| 9. Reports | Planned | Financial, tax and management reports reconcile to source vouchers. |
+| 8. Sale & Purchase | Verified | Issued GST invoices retain their original details. The ₹1,00,000 split purchase posts once and its cashbook payment reduces the payable. |
+| 9. Reports | Verified | Firm and date filters, source drill-down, print, PDF and CSV reconcile to the sample books. |
 | 10. Backup, restore and release | Planned | Packaged Mac and Windows apps can open and recover the same set of books. |
 
 ## Build prompts
@@ -122,6 +122,8 @@ Use a sample workspace with two firms, issued invoices, contractor site splits a
 | 20 Nov 2026 | Phase 5 cashbooks | Reconciled Vikram’s site cash and office cash by date. The cashbook showed Vikram as custodian and Vikram Enterprises as the payee firm. Verified source vouchers and the balance after an offline restart. [Checks and platform coverage](#phase-5-verification) |
 | 20 Nov 2026 | Phase 6 employees | Verified payroll settlement, separate cash custody, reimbursement and advance repayment in offline Demo books. The accountant walkthrough is pending. [Checks](#phase-6-verification) · [Pilot worksheet](#daily-entry-sample-pilot) |
 | 20 Nov 2026 | Phase 7 bank | Verified CSV and XLSX imports, both confirmation paths, overlapping exports and pending rows after offline restart. [Checks](#phase-7-verification) |
+| 20 Nov 2026 | Phase 8 sale and purchase | Issued split-GST and IGST invoices, applied a cashbook instalment and verified the original sale after a firm address change and offline restart. [Checks](#phase-8-verification) |
+| 20 Nov 2026 | Phase 9 reports | Reconciled the sample trial balance, balance sheet and outstanding bills, traced allocations and bank matches, and compared the print, PDF and CSV totals. [Checks](#phase-9-verification) |
 
 ### Reproduce the prototype baseline
 
@@ -187,6 +189,20 @@ The local package attempts used cached Electron archives via `--config.electronD
 - The bank book showed −₹15,000 both before and after importing pending rows. Matching the manual voucher preserved that balance. Posting a new voucher moved it to −₹20,000. Two candidate vouchers for another statement row required an explicit choice, so that row and a pending deposit were still pending after an offline restart. The SQLite regression checked firm scope, repeated confirmation, reversal releasing the match, reposting, and preserving pending rows when a bank account is archived.
 - Matching looks for the same date, signed bank amount, counterparty and site. Overlap detection uses those source rows’ date, description, reference, amount and occurrence count. Two separately exported movements with identical fields and no shared export showing both cannot be distinguished.
 - `npm test` passed all 13 tests. `python3 -B scripts/capture-prototype.py --check` matched all 40 baseline vouchers. Both phases were checked on the Apple silicon development build. Packaged Mac and Windows verification remains pending.
+
+### Phase 8 verification
+
+- Entered purchase `VE-2026-8` in the offline desktop app using Enter to advance from the number through the item and GST fields, Shift+Tab to return to consumer details, the arrow key to select the allocation method and Cmd+S to issue. Booked ₹1,00,000 before tax in Firm A, with ₹60,000 allocated to A and ₹40,000 to B. One voucher debited purchases ₹1,00,000, input CGST ₹9,000 and input SGST ₹9,000, and credited the supplier ₹1,18,000. The SQLite regression confirmed Firm B had no corresponding posting.
+- Applied ₹6,500 to the supplier bill from Invoice cash. The payment voucher debited Vikram Enterprises and credited the cashbook. The linked invoice showed ₹1,11,500 outstanding, and the purchases ledger and expense report still showed ₹1,00,000. The SQLite regression also checked duplicate saves, rejected overpayments, dated payments and reversals, and a credit and refund after full settlement.
+- Issued sale `A-2026-8` for ₹10,000 plus ₹1,800 IGST. Changed Firm A’s address to 99 New Address, Agra. The reopened invoice, print rendering and exported PDF still showed 12 Yamuna Road and ₹11,800. Issued a ₹1,180 credit note and verified the sale balance reached ₹10,620. The original sale and both outstanding balances remained available after an offline restart.
+- The SQLite regression checked percentage allocations and fractional quantities through exact paise, the purchase debit note and its dated reversal, and the version 5 upgrade with the two prototype invoices and the seeded part payment.
+
+### Phase 9 verification
+
+- The isolated 18–19 November fixture reconciled every account ledger closing balance to the trial balance, with ₹1,21,891.43 on each side. Its balance sheet showed ₹21,891.43 in assets and the same total in liabilities and equity. The 20 November desktop pilot, which included earlier cashbook, contractor and employee entries, showed ₹2,18,100 on each side of the trial balance and ₹57,100 on each side of the balance sheet. The balance-sheet difference was ₹0.
+- The outstanding report showed the ₹1,18,000 supplier bill, ₹6,500 applied and ₹1,11,500 outstanding. The purchase register and GST summary showed ₹9,000 each of input CGST and SGST. The sales register showed ₹1,800 output IGST. The matched row in the archived firm’s bank reconciliation opened its original voucher, and pending rows remained visible. The SQLite regression also checked that a match is visible in a period ending before its voucher reversal.
+- Both allocation rows opened supplier invoice `VE-2026-8` in Firm A. The combined report counted the purchase pre-tax value once at ₹1,00,000, and the Firm B filter showed ₹40,000. Including the sale, the screen and printed/PDF copy showed ₹10,000 in sales, ₹1,00,000 in purchases and ₹1,10,000 combined. The CSV contained the same totals at two decimal places.
+- `npm test` passed all 16 tests, `npm run test:desktop` passed on Apple silicon, and `python3 -B scripts/capture-prototype.py --check` matched all 40 baseline vouchers. The desktop test captured the Print action through Electron’s PDF renderer and compared text with the saved PDF. Physical printer output, packaged builds and Windows and Intel Mac verification remain pending.
 
 ### Daily-entry sample pilot
 

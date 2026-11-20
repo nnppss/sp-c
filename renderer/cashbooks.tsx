@@ -183,9 +183,9 @@ async function load(workspace: WorkspaceKind, firmId: number, view: CashbookView
 
 type LoadState = { view: CashbookView } & ({ result: Awaited<ReturnType<typeof load>> } | { error: string });
 
-export function Cashbooks({ workspace, firm, firms, view, savedFocus, shortcut, open, back, showVoucher }: {
+export function Cashbooks({ workspace, firm, firms, view, savedFocus, shortcut, open, back, showVoucher, payBill }: {
   workspace: WorkspaceKind; firm: Firm; firms: Firm[]; view: CashbookView; savedFocus?: string; shortcut: string;
-  open: (view: CashbookView, replace?: boolean) => void; back: () => void; showVoucher: (id: number, posted?: boolean) => void;
+  open: (view: CashbookView, replace?: boolean) => void; back: () => void; showVoucher: (id: number, posted?: boolean) => void; payBill: (cashbookId: number) => void;
 }) {
   const [state, setState] = useState<LoadState>();
   const [attempt, setAttempt] = useState(0);
@@ -270,6 +270,7 @@ export function Cashbooks({ workspace, firm, firms, view, savedFocus, shortcut, 
               onClick={() => open({ name: 'movement', accountId, movement, requestId: crypto.randomUUID() })}>
               {actions[movement]}
             </button>)}
+            <button id="cash-action-bill" className="secondary" onClick={() => payBill(accountId)}>Pay supplier bill</button>
           </div>}
           <Filters period={{ to }} asOf apply={({ to }) => open({ name: 'ledger', query: { accountId, to } }, true)} />
           <dl className="balances book-balances">

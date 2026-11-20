@@ -1,15 +1,13 @@
 # Delivery plan
 
-Deliver the first accountant pilot after phase 3 and the first full desktop release after phase 6. Build the shared ledger early so the accountant can trace an entry from a day-to-day screen into the books throughout development. The [phase tracker](phases.md) holds the work queue, current status and acceptance evidence.
+Deliver the daily-entry pilot after phase 6 (Employees) and the first full desktop release after phase 10 (Backup, restore and release). Each of the six business modules has a dedicated implementation phase. Open the [build prompts](phases.md#build-prompts) to execute them individually or use the repeatable prompt to pick up the next phase.
 
 ## From prototype to desktop
 
-1. **Capture the starting books.** Seed the existing Python backend with a fixed date. Capture per-account balances, dated voucher lines, site attribution and the issued invoice totals as regression fixtures. Use the baseline in the tracker to catch changes during the TypeScript port.
-2. **Prove the installation path early.** Package a small Electron app on Mac and Windows. Create a firm, write to SQLite, quit and reopen it offline. Resolve runtime or data-path issues before adding accounts screens.
-3. **Deliver one complete posting path.** Enter a payment, commit its voucher, open it from the account ledger and verify the trial balance. Extend this same path to the remaining voucher types and module screens.
-4. **Pilot daily money records.** With sample books, let the office accountant enter a two-site payment to Anuj, a cash handover to Vikram and an employee advance using the keyboard. Check the figures and the effort required to move between entries.
-5. **Add the document workflows.** Build bank review and matching, then invoicing, bill-linked payments and firm allocation. Use representative anonymised bank exports and a sample invoice layout to verify column handling, entry order and printed output.
-6. **Reconcile before release.** Run a representative month through the app and compare it with the accountant’s reference books. Investigate differences by voucher. Test backup and restore between platforms, including pending bank rows and invoices issued before a firm’s address changed.
+1. **Phases 1–3 establish the books.** Capture the Python prototype’s fixed-date fixtures, package the Electron shell, build Firms, then implement vouchers and the trial balance within the selected firm. The accounting core supplies basic bank and cash ledgers for the next modules.
+2. **Phases 4–6 deliver daily entry.** Build Contractors, Cashbooks and Employees individually. Pilot the two-site payment to Anuj, Vikram’s cash handover and an employee advance through the keyboard UI.
+3. **Phases 7–8 add document workflows.** Bank adds statement review and matching to existing manual entries. Sale & Purchase adds issued invoices, GST, bill-linked payments and firm allocations. Exercise both modules with representative bank exports and an invoice printout.
+4. **Phases 9–10 reconcile and release.** Reports trace financial and management totals down to their source vouchers. Test installers and backup recovery across platforms, and compare a representative month with the accountant’s reference books.
 
 ## Decisions that guide implementation
 
@@ -23,6 +21,6 @@ Deliver the first accountant pilot after phase 3 and the first full desktop rele
 
 ## Evidence for pilot and release
 
-- **Pilot.** Use clean sample books, carry out the phase 3 scenarios and record the accountant’s feedback on entry order, search and site totals.
+- **Pilot.** Use clean sample books, carry out the Contractors, Cashbooks and Employees scenarios, and record the accountant’s feedback on entry order, search and site totals.
 - **Release.** Exercise keyboard-only entry, date filters and drill-downs, repeated saves, failed imports, historical invoice printing and restoration on another operating system. Compare ledger totals and outstanding items as well as debit/credit equality. A balanced trial balance can still contain a posting to the wrong account.
 - **Keep the docs current.** Update [software.md](software.md) when the accountant’s workflow or scope changes, [architecture.md](architecture.md) when an implementation decision changes, and this plan when the delivery sequence changes. After a milestone or a failed acceptance check, update [phases.md](phases.md) with the date, result and remaining work.

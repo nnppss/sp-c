@@ -48,19 +48,24 @@ test('replays the prototype postings to the captured account and site balances',
 
 test('migrates fresh files, seeds only demo and preserves populated settings on reopen', () => {
   const live = openWorkspace(directory, 'live', fixture);
-  expect(live.prepare('PRAGMA user_version').get()).toEqual({ user_version: 1 });
+  expect(live.prepare('PRAGMA user_version').get()).toEqual({ user_version: 2 });
   expect(live.prepare('PRAGMA foreign_keys').get()).toEqual({ foreign_keys: 1 });
-  expect(readWorkspace(live)).toEqual({ name: 'SP & Company', demo: null });
+  expect(readWorkspace(live)).toEqual({ name: 'SP & Company', firms: [], activeFirmId: null, demo: null });
   live.prepare("UPDATE workspace_settings SET value = 'Office books' WHERE key = 'name'").run();
   live.close();
 
   const demo = openWorkspace(directory, 'demo', fixture);
-  expect(readWorkspace(demo)).toEqual({ name: 'SP & Company Demo', demo: { vouchers: 40, debit: 219_800_000, credit: 219_800_000 } });
+  expect(readWorkspace(demo)).toEqual({
+    name: 'SP & Company Demo',
+    firms: [{ id: 1, name: 'SP & Company', owner: 'Nikhil Singh', address: 'Agra, Uttar Pradesh', gstin: '', archived: false }],
+    activeFirmId: 1,
+    demo: { firmId: 1, vouchers: 40, debit: 219_800_000, credit: 219_800_000 },
+  });
   expect(demo.prepare('SELECT snapshot FROM demo_baseline').get()).toEqual({ snapshot: readFileSync(fixture, 'utf8') });
   demo.close();
 
   const reopened = openWorkspace(directory, 'live', fixture);
-  expect(readWorkspace(reopened)).toEqual({ name: 'Office books', demo: null });
+  expect(readWorkspace(reopened)).toEqual({ name: 'Office books', firms: [], activeFirmId: null, demo: null });
   reopened.close();
 });
 

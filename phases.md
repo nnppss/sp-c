@@ -7,7 +7,7 @@
 | Phase | Status | Working result |
 | --- | --- | --- |
 | 1. Desktop foundation | Blocked | Verified offline restart and workspace isolation on Apple silicon. Intel Mac launch and Windows installer and launch checks need platform runners. |
-| 2. Firms | Planned | The accountant can create two firms and switch between their books. |
+| 2. Firms | Verified | Firm details and the selected books survived an offline restart on Apple silicon. Unused firms can be deleted and referenced firms retain their history. |
 | 3. Vouchers and accounting core | Planned | A posted voucher can be opened from the day book, account ledger and trial balance. |
 | 4. Contractors | Planned | A single bank payment can be split across sites and traced back from Anuj’s ledger. |
 | 5. Cashbooks | Planned | Vikram’s cashbook reconciles money entrusted, spent, returned and still held. |
@@ -116,6 +116,7 @@ Use a sample workspace with two firms, issued invoices, contractor site splits a
 | 20 Nov 2026 | Repository baseline | The prototype contains posting, invoice, statement import/match and backup code. The HTML shell references scripts and styles that are absent. The project has no Electron package or desktop installer. [Prototype entry point](app.py) · [Ledger code](ledger.py) · [HTML shell](static/index.html) |
 | 20 Nov 2026 | Prototype ledger check | With the seed date fixed at 20 Nov 2026, all 40 vouchers balanced individually. Closing debit and credit balances each totalled ₹21,98,000. The saved sale totalled ₹1,13,280 and the purchase ₹63,720. This checks the sample ledger. Desktop implementation awaits the module acceptance checks. |
 | 20 Nov 2026 | Phase 1 desktop foundation | Captured all 40 vouchers, postings, site assignments, balances and the two invoice snapshots. The Electron app opens separate Live and Demo SQLite files through a worker. Keyboard navigation and offline restart passed in development and from the mounted Apple silicon DMG. [Commands and platform results](#phase-1-verification) |
+| 20 Nov 2026 | Phase 2 firms | Created Firm A and Firm B in a disposable Demo workspace, edited A, switched to B by keyboard and verified the saved selection and both firms’ details after relaunch. [Checks and platform coverage](#phase-2-verification) |
 
 ### Reproduce the prototype baseline
 
@@ -130,3 +131,10 @@ Repeat the fixed-date check from the project root using the [build guide](docs/B
 - `npm run package:win` cross-bundled [`release/win-unpacked/SP Company Accounts.exe`](release/win-unpacked/SP%20Company%20Accounts.exe). Static inspection confirmed the x64 executable and its packaged main, preload, worker, renderer and fixture. The NSIS step failed because the bundled `makensis` is an Intel macOS binary and this host lacks Rosetta. The Windows x64 NSIS build, install and offline smoke remain pending on a Windows runner.
 
 The local package attempts used cached Electron archives via `--config.electronDist` and a cached electron-builder tool directory. Standard commands and the executable paths for repeating the checks are in the [build guide](docs/BUILD.md#package-and-smoke-test).
+
+### Phase 2 verification
+
+- `python3 -B scripts/capture-prototype.py --check` matched the fixed-date fixture, including all 40 vouchers.
+- `npm test` passed all five checks. The Firms regressions cover a populated version 1 upgrade, persisted selection, stable firm IDs, deletion of unused firms, and preservation of references and the demo snapshot when a firm is archived.
+- `npm run test:desktop` built the app and passed on macOS 27.0 arm64 with Electron 45.3.2. The smoke test created Firm A and Firm B with different owners, addresses and GSTINs, edited A, tabbed to the switcher and selected B using the arrow keys. The demo totals stayed with their original firm. The test deleted an unused firm, archived the original seeded firm and checked its retained voucher count and both trial balance totals. After an offline relaunch, the Demo workspace restored Firm B as active and both firms’ saved details matched. Live had no firms in the test profile.
+- Phase 2 verification covered the development build on Apple silicon. Packaged Phase 2 builds, Intel Mac and Windows were outside this run. The Phase 1 platform checks above remain pending.

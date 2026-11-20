@@ -31,6 +31,10 @@ flowchart LR
 | Invoices, allocations and bill payments | Store the invoice fields, party details, items and tax breakdown as issued. Link the invoice to its voucher. Management allocations distribute the pre-tax amount among firms. Bill-payment links support partial payments and the outstanding balance. |
 | Imported statement rows | Retain the bank account, source row details, signed amount and review state. A confirmed match links the row to the relevant bank movement. A pending row has no effect on the books. |
 
+Each workspace exposes its selected firm as `Workspace.activeFirmId`. The desktop shell pairs that ID with the workspace kind when opening the books. Use both values for entry and query requests, and capture the firm ID when initializing an entry draft. An empty workspace has no active firm. The first available firm is used by default, and an explicit selection is saved in that workspace.
+
+Use immediate, non-cascading foreign keys to `firms.id` for book records. Removing a referenced firm archives it and preserves its ID for historical queries. New entries and the active-firm switcher use unarchived firms.
+
 ## Posting and querying
 
 1. React sends a named command, such as `postVoucher`, with the booking firm, source details and a stable request ID. A report reads through a query such as `getLedger` with firm, account, period and optional site.

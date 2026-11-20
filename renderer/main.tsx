@@ -3,6 +3,7 @@ import type { FormEvent } from 'react';
 import { createRoot } from 'react-dom/client';
 import { NAME_LIMIT, WORKSPACES, workspaceName } from '../desktop/workspace';
 import type { Workspace, WorkspaceBridge, WorkspaceKind } from '../desktop/workspace';
+import { DemoBalances, Firms } from './firms';
 import './style.css';
 
 declare global {
@@ -13,7 +14,6 @@ const PAGES = ['Overview', 'Firms', 'Vouchers', 'Contractors', 'Cashbooks', 'Emp
 type Page = (typeof PAGES)[number];
 type Entry = { page: Page; focus?: string; selection?: [number, number] };
 const labels = { live: 'Live', demo: 'Demo' };
-const rupees = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 });
 const shortcuts = window.workspaces.isMac
   ? { back: '⌘ [', forward: '⌘ ]', save: '⌘ S' }
   : { back: 'Alt ←', forward: 'Alt →', save: 'Ctrl S' };
@@ -28,6 +28,9 @@ function WorkspaceShell({ kind, switchWorkspace }: { kind: WorkspaceKind; switch
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  const changing = useRef(false);
+  const availableFirms = workspace?.firms.filter(firm => !firm.archived) ?? [];
+  const activeDemo = workspace?.demo && workspace.demo.firmId === workspace.activeFirmId ? workspace.demo : null;
 
   useEffect(() => {
     let active = true;
@@ -44,13 +47,16 @@ function WorkspaceShell({ kind, switchWorkspace }: { kind: WorkspaceKind; switch
   useLayoutEffect(() => {
     const target = document.getElementById(entry.focus ?? 'page-title') ?? document.getElementById('page-title');
     target?.focus();
-    if (target instanceof HTMLInputElement && entry.selection) target.setSelectionRange(...entry.selection);
+    if ((target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) && entry.selection) {
+      target.setSelectionRange(...entry.selection);
+    }
   }, [entry]);
 
   function rememberFocus() {
     const target = document.getElementById(focus.current);
     const saved: Entry = { page: entry.page, focus: target?.id };
-    if (target instanceof HTMLInputElement && target.selectionStart !== null && target.selectionEnd !== null) {
+    if ((target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) &&
+        target.selectionStart !== null && target.selectionEnd !== null) {
       saved.selection = [target.selectionStart, target.selectionEnd];
     }
     return entries.map((item, position) => position === index ? saved : item);
@@ -67,22 +73,36 @@ function WorkspaceShell({ kind, switchWorkspace }: { kind: WorkspaceKind; switch
     setHistory({ entries: rememberFocus(), index: next });
   }
 
-  async function save(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (saving || !workspace) return;
-    setNotice('');
+  async function changeWorkspace(change: () => Promise<Workspace>) {
+    if (changing.current || !workspace) return;
+    changing.current = true;
     setError('');
     setSaving(true);
     try {
-      const result = await window.workspaces.saveName(kind, workspaceName(name));
+      const result = await change();
       setWorkspace(result);
-      setName(result.name);
-      setNotice('Workspace settings saved.');
+      return result;
     } catch (error) {
-      setError(error instanceof Error ? error.message : 'Could not save workspace settings.');
+      setError(error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': Error: /, '')
+        : 'Could not update the workspace.');
     } finally {
+      changing.current = false;
       setSaving(false);
     }
+  }
+
+  async function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setNotice('');
+    const result = await changeWorkspace(() => window.workspaces.saveName(kind, workspaceName(name)));
+    if (result) {
+      setName(result.name);
+      setNotice('Workspace settings saved.');
+    }
+  }
+
+  function selectFirm(id: number) {
+    if (id !== workspace?.activeFirmId) void changeWorkspace(() => window.workspaces.selectFirm(kind, id));
   }
 
   return (
@@ -94,9 +114,11 @@ function WorkspaceShell({ kind, switchWorkspace }: { kind: WorkspaceKind; switch
       if (historyModifier && !event.shiftKey && (event.key === back || event.key === forward)) {
         event.preventDefault();
         move(event.key === back ? -1 : 1);
-      } else if (primary && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 's' && entry.page === 'Workspace settings') {
+      } else if (primary && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 's' &&
+          (entry.page === 'Workspace settings' || entry.page === 'Firms')) {
         event.preventDefault();
-        document.querySelector<HTMLFormElement>('#settings-form')?.requestSubmit();
+        const formId = entry.page === 'Firms' ? '#firm-form' : '#settings-form';
+        document.querySelector<HTMLFormElement>(formId)?.requestSubmit();
       }
     }}>
       <aside className="sidebar">
@@ -118,7 +140,25 @@ function WorkspaceShell({ kind, switchWorkspace }: { kind: WorkspaceKind; switch
             <button type="button" disabled={index === 0} onClick={() => move(-1)}>Back <kbd>{shortcuts.back}</kbd></button>
             <button type="button" disabled={index === entries.length - 1} onClick={() => move(1)}>Forward <kbd>{shortcuts.forward}</kbd></button>
           </div>
-          <span className={kind === 'demo' ? 'mode demo' : 'mode'}>{labels[kind]} workspace</span>
+          <div className="toolbar-context">
+            <div className="firm-picker">
+              <label htmlFor="active-firm">Active firm</label>
+              <select id="active-firm" value={workspace?.activeFirmId ?? ''} disabled={availableFirms.length === 0} aria-disabled={saving}
+                onChange={(event) => selectFirm(Number(event.target.value))}
+                onKeyDown={(event) => {
+                  if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey ||
+                      event.nativeEvent.isComposing || (event.key !== 'ArrowUp' && event.key !== 'ArrowDown')) return;
+                  event.preventDefault();
+                  const index = availableFirms.findIndex(firm => firm.id === workspace?.activeFirmId);
+                  const next = availableFirms[index + (event.key === 'ArrowDown' ? 1 : -1)];
+                  if (next) selectFirm(next.id);
+                }}>
+                {availableFirms.length === 0 && <option value="">No firm selected</option>}
+                {availableFirms.map(firm => <option key={firm.id} value={firm.id}>{firm.name}</option>)}
+              </select>
+            </div>
+            <span className={kind === 'demo' ? 'mode demo' : 'mode'}>{labels[kind]} workspace</span>
+          </div>
         </header>
         <main onFocusCapture={(event) => { focus.current = event.target.id || 'page-title'; }}>
           {entry.page === 'Overview' && <p className="eyebrow">{labels[kind]} workspace</p>}
@@ -128,13 +168,7 @@ function WorkspaceShell({ kind, switchWorkspace }: { kind: WorkspaceKind; switch
             <>
               {workspace && <p className="intro">{workspace.demo ? 'Sample books from 20 November 2026.' : 'Your company books are stored on this computer.'}</p>}
               {!workspace && !error && <p role="status">Opening workspace…</p>}
-              {workspace?.demo && (
-                <dl className="balances">
-                  <div><dt>Prototype vouchers</dt><dd>{workspace.demo.vouchers}</dd></div>
-                  <div><dt>Trial balance debit</dt><dd>{rupees.format(workspace.demo.debit / 100)}</dd></div>
-                  <div><dt>Trial balance credit</dt><dd>{rupees.format(workspace.demo.credit / 100)}</dd></div>
-                </dl>
-              )}
+              {activeDemo && <DemoBalances demo={activeDemo} />}
               {workspace && <div className="panel overview-panel">
                 <div><h2>Workspace settings</h2><p>Set the name displayed when these books open.</p></div>
                 <button className="action" id="open-settings" onClick={() => navigate('Workspace settings')}>Open settings</button>
@@ -153,8 +187,13 @@ function WorkspaceShell({ kind, switchWorkspace }: { kind: WorkspaceKind; switch
               </div>
             </form>
           )}
-          {entry.page === 'Workspace settings' && !workspace && !error && <p role="status">Opening workspace…</p>}
-          {entry.page !== 'Overview' && entry.page !== 'Workspace settings' && (
+          {workspace && (
+            <section hidden={entry.page !== 'Firms'} aria-labelledby="page-title">
+              <Firms kind={kind} workspace={workspace} saving={saving} shortcut={shortcuts.save} changeWorkspace={changeWorkspace} />
+            </section>
+          )}
+          {(entry.page === 'Workspace settings' || entry.page === 'Firms') && !workspace && !error && <p role="status">Opening workspace…</p>}
+          {entry.page !== 'Overview' && entry.page !== 'Workspace settings' && entry.page !== 'Firms' && (
             <p className="intro">This module is awaiting implementation.</p>
           )}
         </main>

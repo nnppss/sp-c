@@ -10,7 +10,7 @@ npm exec -- install-electron
 npm run dev
 ```
 
-`npm run dev` compiles TypeScript, builds the renderer with Vite and opens Electron. Re-run it after edits. The app opens in Live by default. The Live and Demo buttons open `workspaces/live.sqlite3` and `workspaces/demo.sqlite3` under Electron’s `userData` directory. Open Workspace settings to change the displayed name. Demo contains the fixed-date prototype books, and a new Live workspace starts empty. Development and packaged smoke tests use disposable profiles.
+`npm run dev` compiles TypeScript, builds the renderer with Vite and opens Electron. Re-run it after edits. The app opens in Live by default. The Live and Demo buttons open `workspaces/live.sqlite3` and `workspaces/demo.sqlite3` under Electron’s `userData` directory. Open Workspace settings to change the displayed name. Demo contains the fixed-date prototype books, and a new Live workspace starts empty. Use Firms to manage the directory and the Active firm control in the toolbar to switch books. Each workspace saves its own selection. Development and packaged smoke tests use disposable profiles.
 
 ## Regression and desktop checks
 
@@ -20,7 +20,7 @@ npm test
 npm run test:desktop
 ```
 
-The fixture check compares the checked-in JSON with a fresh fixed-date Python seed. The Vitest suite replays the postings and checks the captured account and site balances, invoice snapshots, SQLite migrations and demo/live isolation. The desktop smoke opens a fresh profile, exercises keyboard navigation and focus restoration, saves separate names for Live and Demo, then quits and relaunches with networking disabled in the renderer. Run on a graphical desktop. On Windows, use `py -3 -B` in place of `python3 -B`.
+The fixture check compares the checked-in JSON with a fresh fixed-date Python seed. The Vitest suite replays the postings and checks the captured balances, invoice snapshots, SQLite migrations, firm selection and preservation of referenced history. The desktop smoke checks keyboard navigation and focus restoration, edits the sample firm directory, switches firms by keyboard, and confirms that the active firm and its details survive an offline restart. Run on a graphical desktop. On Windows, use `py -3 -B` in place of `python3 -B`.
 
 ## Package and smoke-test
 

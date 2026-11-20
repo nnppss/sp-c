@@ -11,7 +11,7 @@
 
 * { box-sizing: border-box; }
 body { margin: 0; }
-button, input { font: inherit; }
+button, input, select, textarea { font: inherit; }
 button { cursor: pointer; }
 button:disabled { cursor: default; }
 :focus-visible { outline: 3px solid #337859; outline-offset: 3px; }
@@ -35,7 +35,10 @@ nav button:last-child { margin-top: 12px; }
 .workspace { display: grid; grid-template-rows: auto 1fr auto; min-width: 0; }
 .toolbar, footer { background: var(--paper); padding: 13px 25px; display: flex; align-items: center; gap: 8px; }
 .toolbar { justify-content: space-between; border-bottom: 1px solid var(--line); }
-.history, .form-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.history, .form-actions, .toolbar-context, .firm-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.toolbar-context { justify-content: flex-end; gap: 12px; }
+.firm-picker { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: .83rem; font-weight: 650; }
+.firm-picker select { max-width: clamp(140px, 22vw, 270px); padding: 5px; color: #1d2d28; background: white; border: 1px solid #9aac9e; border-radius: 5px; }
 .history button { border: 1px solid var(--line); background: var(--paper); border-radius: 6px; padding: 5px 8px; color: inherit; font-size: .83rem; }
 .history button:hover:enabled { background: #edf3ea; }
 .history button:disabled { color: #637369; }
@@ -43,6 +46,7 @@ kbd { color: #40594e; font: .73rem ui-monospace, monospace; white-space: nowrap;
 .history kbd { margin-left: 4px; }
 .mode { background: #e1eee2; color: #245340; padding: 5px 9px; border-radius: 5px; font-size: .78rem; font-weight: 650; }
 .mode.demo { background: #f6ead3; color: #694a16; }
+.mode.archived { background: #e8e9e4; color: #43544a; }
 
 main { width: 100%; max-width: 1120px; margin: 0 auto; padding: 42px clamp(25px, 5vw, 64px); }
 .eyebrow { color: var(--green); font-size: .76rem; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; margin: 0 0 10px; }
@@ -60,10 +64,28 @@ h1:focus { outline: none; }
 .balances dd { margin: 8px 0 0; font: 1.53rem Georgia, serif; font-variant-numeric: lining-nums tabular-nums; }
 .settings { max-width: 570px; padding: 22px; margin-top: 22px; }
 .settings label { display: block; font-weight: 650; font-size: .9rem; margin-bottom: 7px; }
-.settings input { display: block; width: 100%; padding: 9px; color: inherit; background: white; border: 1px solid #9aac9e; border-radius: 5px; margin-bottom: 18px; }
+.settings input, .settings textarea { display: block; width: 100%; padding: 9px; color: inherit; background: white; border: 1px solid #9aac9e; border-radius: 5px; margin-bottom: 18px; }
+.settings textarea { resize: vertical; }
+.settings h2 { margin: 0 0 18px; font: 1.35rem Georgia, serif; overflow-wrap: anywhere; }
 .action { border: 1px solid var(--green); border-radius: 5px; background: var(--green); color: white; padding: 8px 12px; font-weight: 650; font-size: .85rem; }
 .action:hover:enabled { background: #25664e; }
 .action:disabled { opacity: .72; }
+.secondary, .danger { border: 1px solid #9aac9e; border-radius: 5px; padding: 8px 12px; background: var(--paper); color: var(--green); font-size: .85rem; }
+.secondary:hover:enabled { background: #edf3ea; }
+.danger { color: #963422; border-color: #cd9f92; }
+.danger:hover:enabled, .removal { background: #fcf0eb; }
+.firms { margin-top: 22px; }
+.firm-actions { gap: 14px; color: var(--green); font-size: .87rem; }
+.firm-list { max-width: 670px; list-style: none; margin: 16px 0 0; padding: 0 16px; }
+.firm-list li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; }
+.firm-list li + li { border-top: 1px solid var(--line); }
+.firm-list li div { min-width: 0; overflow-wrap: anywhere; }
+.firm-list strong { margin-right: 8px; }
+.firm-list p { margin: 5px 0 0; font-size: .87rem; color: var(--muted); }
+.firm-list .mode { display: inline-block; }
+.firm-history { margin-top: 16px; max-width: 570px; }
+.removal { border-radius: 5px; padding: 12px; }
+.removal p { margin: 0 0 12px; overflow-wrap: anywhere; }
 .form-actions span { margin-left: 4px; color: var(--green); font-size: .87rem; }
 .error { color: #963422; }
 footer { border-top: 1px solid var(--line); color: var(--muted); font-size: .76rem; }

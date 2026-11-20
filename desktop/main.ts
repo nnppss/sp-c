@@ -91,6 +91,15 @@ function bindWorkspace(directory: string) {
   ipcMain.handle(CHANNELS.saveName, (event, kind: unknown, name: unknown) => (
     dispatch({ operation: 'saveName', kind: validateCaller(event, kind), name: workspaceName(name) })
   ));
+  ipcMain.handle(CHANNELS.saveFirm, (event, kind: unknown, id: unknown, details: unknown) => (
+    dispatch({ operation: 'saveFirm', kind: validateCaller(event, kind), id, details })
+  ));
+  ipcMain.handle(CHANNELS.selectFirm, (event, kind: unknown, id: unknown) => (
+    dispatch({ operation: 'selectFirm', kind: validateCaller(event, kind), id })
+  ));
+  ipcMain.handle(CHANNELS.removeFirm, (event, kind: unknown, id: unknown) => (
+    dispatch({ operation: 'removeFirm', kind: validateCaller(event, kind), id })
+  ));
 }
 
 if (!app.requestSingleInstanceLock()) {

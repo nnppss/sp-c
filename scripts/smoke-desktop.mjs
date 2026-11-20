@@ -157,13 +157,209 @@ async function exerciseOpening(page, save) {
   await trialTotals(page, '₹75.10');
 }
 
+async function typeField(page, label, value, scope = page) {
+  await scope.getByLabel(label, { exact: true }).focus();
+  await page.keyboard.type(value);
+}
+
+async function chooseOption(page, label, option, scope = page) {
+  const select = scope.getByLabel(label, { exact: true });
+  await select.focus();
+  const options = await select.locator('option').allTextContents();
+  const destination = options.indexOf(option);
+  assert.notEqual(destination, -1, option);
+  const current = await select.evaluate(input => input.selectedIndex);
+  const direction = destination > current ? 'ArrowDown' : 'ArrowUp';
+  for (let step = 0; step < Math.abs(destination - current); step++) await page.keyboard.press(direction);
+  assert.equal(await select.evaluate(input => input.selectedOptions[0]?.textContent), option);
+}
+
+async function contractorSummary(page, amounts) {
+  await page.getByRole('heading', { name: 'Anuj ledger', exact: true }).waitFor();
+  assert.deepEqual(await page.locator('.books .balances dd').allTextContents(), amounts);
+}
+
+async function postedVoucher(page, kind) {
+  await page.getByText('Voucher posted.', { exact: true }).waitFor();
+  const title = await page.getByRole('heading', { name: new RegExp('^' + kind + ' #') }).innerText();
+  return title.split(' ')[1];
+}
+
+async function exerciseContractors(page, save, back, forward) {
+  await choosePage(page, 'Contractors');
+  await pressButton(page, 'New contractor');
+  const name = page.getByLabel('Contractor name', { exact: true });
+  assert.equal(await name.evaluate(input => input === document.activeElement), true);
+  await page.keyboard.type('Anuj');
+  await page.keyboard.press('Enter');
+  assert.equal(await page.getByLabel('New sites (comma-separated)').evaluate(input => input === document.activeElement), true);
+  await page.keyboard.type('Yamuna, Bodla');
+  await page.keyboard.press(save);
+  await page.getByText('Contractor saved.', { exact: true }).waitFor();
+  await pressButton(page, 'Pay contractor');
+  await page.getByRole('heading', { name: 'Pay contractor · Anuj' }).waitFor();
+  await page.keyboard.press('Escape');
+  await page.getByRole('heading', { name: 'Anuj ledger' }).waitFor();
+  await pressButton(page, 'Pay contractor');
+  await chooseOption(page, 'Pay from', 'Firm A bank · Bank');
+  await typeField(page, 'Narration', 'Anuj two-site payment');
+  await page.keyboard.press('Enter');
+  const first = page.getByRole('group', { name: 'Allocation 1', exact: true });
+  const second = page.getByRole('group', { name: 'Allocation 2', exact: true });
+  assert.equal(await first.getByLabel('Site', { exact: true }).evaluate(input => input === document.activeElement), true);
+  await chooseOption(page, 'Site', 'Yamuna', first);
+  await typeField(page, 'Amount (₹)', '30000', first);
+  await page.keyboard.press('Tab');
+  assert.equal(await page.getByRole('button', { name: 'Add site split' }).evaluate(button => button === document.activeElement), true);
+  await page.keyboard.press('Enter');
+  assert.equal(await second.getByLabel('Site', { exact: true }).evaluate(input => input === document.activeElement), true);
+  await chooseOption(page, 'Site', 'Bodla', second);
+  await typeField(page, 'Amount (₹)', '10000', second);
+  await page.keyboard.press(save);
+  const payment = await postedVoucher(page, 'Payment');
+  const postings = page.getByRole('table', { name: 'Posting lines' });
+  assert.deepEqual(await postings.locator('tbody tr').allTextContents(), [
+    'AnujYamuna₹30,000—', 'AnujBodla₹10,000—', 'Firm A bank——₹40,000',
+  ]);
+  await pressButton(page, 'Firm A bank');
+  const bank = page.getByRole('table', { name: 'Account ledger' });
+  await bank.waitFor();
+  assert.equal(await bank.getByRole('button', { name: payment, exact: true }).count(), 1);
+  const bankAmounts = await bank.getByRole('row').filter({ hasText: 'Anuj two-site payment' }).locator('td.book-amount').allTextContents();
+  assert.deepEqual(bankAmounts.slice(0, 2), ['—', '₹40,000']);
+  await page.keyboard.press(back);
+  await page.getByRole('heading', { name: 'Payment ' + payment, exact: true }).waitFor();
+  await page.keyboard.press(back);
+  await contractorSummary(page, ['₹40,000', '₹0', '₹40,000', '₹40,000']);
+
+  await pressButton(page, 'Receive money');
+  await chooseOption(page, 'Receive into', 'Firm A cash · Cash');
+  await typeField(page, 'Narration', 'Bodla cash returned');
+  await chooseOption(page, 'Site', 'Bodla', first);
+  await typeField(page, 'Amount (₹)', '2000', first);
+  await page.keyboard.press(save);
+  const receipt = await postedVoucher(page, 'Receipt');
+  await page.keyboard.press(back);
+  const amounts = ['₹40,000', '₹2,000', '₹38,000', '₹38,000'];
+  await contractorSummary(page, amounts);
+  const movements = page.getByRole('table', { name: 'Contractor transactions' });
+  const chronological = await movements.locator('tbody tr').allTextContents();
+  assert.match(chronological[0], /YamunaBank₹30,000—₹30,000$/);
+  assert.match(chronological[1], /BodlaBank₹10,000—₹40,000$/);
+  assert.match(chronological[2], /BodlaCash—₹2,000₹38,000$/);
+
+  await pressButton(page, 'By site');
+  const siteTotals = page.getByRole('table', { name: 'Contractor sites' });
+  await siteTotals.waitFor();
+  const bySite = await siteTotals.locator('tbody tr').allTextContents();
+  assert.deepEqual(bySite, ['Bodla₹10,000₹2,000₹8,000₹8,000', 'Yamuna₹30,000₹0₹30,000₹30,000']);
+  await pressButton(page, 'Bodla');
+  await page.getByRole('heading', { name: 'Bodla ledger', exact: true }).waitFor();
+  assert.equal(await movements.locator('tbody tr').count(), 2);
+  assert.match((await movements.locator('tbody tr').allTextContents())[1], /Cash—₹2,000₹8,000$/);
+  await pressButton(page, receipt);
+  await page.getByRole('heading', { name: 'Receipt ' + receipt, exact: true }).waitFor();
+  await page.keyboard.press(back);
+  await page.getByRole('heading', { name: 'Bodla ledger', exact: true }).waitFor();
+  assert.equal(await movements.getByRole('button', { name: receipt, exact: true }).evaluate(button => button === document.activeElement), true);
+  await page.keyboard.press(forward);
+  await page.getByRole('heading', { name: 'Receipt ' + receipt, exact: true }).waitFor();
+  await page.keyboard.press(back);
+  await pressButton(page, payment);
+  await page.getByRole('heading', { name: 'Payment ' + payment, exact: true }).waitFor();
+
+  await choosePage(page, 'Contractors');
+  await pressButton(page, 'New contractor');
+  await typeField(page, 'Contractor name', 'Ravi');
+  await page.getByRole('checkbox', { name: 'Yamuna', exact: true }).focus();
+  await page.keyboard.press('Space');
+  await page.keyboard.press(save);
+  await page.getByText('Contractor saved.', { exact: true }).waitFor();
+  await choosePage(page, 'Contractors');
+  const search = page.getByLabel('Search by contractor or site');
+  await typeField(page, 'Search by contractor or site', 'Yamuna');
+  const directory = page.getByRole('table', { name: 'Contractor directory' });
+  assert.deepEqual(await directory.getByRole('button').allTextContents(), ['Anuj', 'Ravi']);
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('ArrowDown');
+  assert.equal(await directory.getByRole('button', { name: 'Ravi' }).evaluate(button => button === document.activeElement), true);
+  await page.keyboard.press('ArrowUp');
+  await page.keyboard.press('Enter');
+  await contractorSummary(page, amounts);
+  await pressButton(page, 'By site');
+  await siteTotals.waitFor();
+  assert.deepEqual(await siteTotals.locator('tbody tr').allTextContents(), bySite);
+  await pressButton(page, 'Yamuna');
+  await page.getByRole('heading', { name: 'Yamuna ledger', exact: true }).waitFor();
+  await pressButton(page, payment);
+  await page.getByRole('heading', { name: 'Payment ' + payment, exact: true }).waitFor();
+  await page.keyboard.press(back);
+  await page.keyboard.press(back);
+  await page.keyboard.press(back);
+  await page.keyboard.press(back);
+  await directory.waitFor();
+  assert.equal(await search.inputValue(), 'Yamuna');
+  assert.equal(await directory.getByRole('button', { name: 'Anuj', exact: true }).evaluate(button => button === document.activeElement), true);
+  await search.focus();
+  await page.keyboard.press(process.platform === 'darwin' ? 'Meta+a' : 'Control+a');
+  await page.keyboard.type('ravi');
+  assert.deepEqual(await directory.getByRole('button').allTextContents(), ['Ravi']);
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Enter');
+  await page.getByRole('heading', { name: 'Ravi ledger', exact: true }).waitFor();
+  await pressButton(page, 'Edit contractor');
+  await pressButton(page, 'Remove contractor');
+  assert.equal(await page.getByRole('button', { name: 'Keep contractor' }).evaluate(button => button === document.activeElement), true);
+  await page.keyboard.press('Tab');
+  await page.keyboard.press('Enter');
+  await page.getByText('Contractor deleted.', { exact: true }).waitFor();
+  assert.equal(await directory.getByRole('button', { name: 'Ravi' }).count(), 0);
+
+  await choosePage(page, 'Vouchers');
+  await pressButton(page, 'Chart of accounts');
+  await pressButton(page, 'New account');
+  await typeField(page, 'Account name', 'Contract work');
+  await chooseOption(page, 'Account type', 'Expense');
+  await page.keyboard.press(save);
+  await page.getByText('Account saved.', { exact: true }).waitFor();
+  await choosePage(page, 'Contractors');
+  await pressButton(page, 'Anuj');
+  await pressButton(page, 'Record settlement');
+  await chooseOption(page, 'Offset account', 'Contract work · Expense');
+  await typeField(page, 'Narration', 'Agreed Yamuna work');
+  await chooseOption(page, 'Site', 'Yamuna', first);
+  await typeField(page, 'Amount (₹)', '30000', first);
+  await page.keyboard.press(save);
+  const settlement = await postedVoucher(page, 'Journal');
+  assert.deepEqual(await postings.locator('tbody tr').allTextContents(), ['AnujYamuna—₹30,000', 'Contract work—₹30,000—']);
+  await page.keyboard.press(back);
+  await contractorSummary(page, ['₹40,000', '₹2,000', '₹38,000', '₹8,000']);
+  assert.match((await movements.locator('tbody tr').allTextContents()).at(-1), /YamunaNoncash——₹8,000$/);
+
+  await pressButton(page, 'Edit contractor');
+  await name.focus();
+  await page.keyboard.press('End');
+  await page.keyboard.type(' Kumar');
+  await page.keyboard.press(save);
+  await page.getByRole('heading', { name: 'Anuj Kumar ledger', exact: true }).waitFor();
+  await pressButton(page, 'Edit contractor');
+  await pressButton(page, 'Remove contractor');
+  await pressButton(page, 'Confirm removal');
+  await page.getByText('Contractor archived. Its ledger is still available.', { exact: true }).waitFor();
+  await pressButton(page, 'Anuj Kumar');
+  await page.getByText('Archived records', { exact: true }).waitFor();
+  assert.equal(await page.getByRole('button', { name: 'Pay contractor' }).count(), 0);
+  return settlement;
+}
+
 try {
   let page = await launch();
   await heading(page, 'SP & Company');
   assert.match(await page.locator('footer').innerText(), /Offline/);
   assert.deepEqual(await page.evaluate(() => ({ bridge: Object.keys(window.workspaces).sort(), require: typeof window.require })),
-    { bridge: ['createAccount', 'getChart', 'getDayBook', 'getLedger', 'getTrialBalance', 'getVoucher', 'isMac',
-      'postVoucher', 'read', 'removeFirm', 'reverseVoucher', 'saveFirm', 'saveName', 'selectFirm'], require: 'undefined' });
+    { bridge: ['createAccount', 'getChart', 'getContractorLedger', 'getContractors', 'getDayBook', 'getLedger',
+      'getTrialBalance', 'getVoucher', 'isMac', 'postVoucher', 'read', 'removeContractor', 'removeFirm', 'reverseVoucher',
+      'saveContractor', 'saveFirm', 'saveName', 'selectFirm'], require: 'undefined' });
   assert.equal(await page.evaluate(() => window.workspaces.read('../live').then(() => false, () => true)), true);
   assert.equal(await page.evaluate(() => window.workspaces.saveName('live', '   ').then(() => false, () => true)), true);
   assert.equal(await page.getByText('Prototype vouchers').count(), 0);
@@ -246,6 +442,7 @@ try {
   await page.keyboard.press('ArrowDown');
   await activeFirm(page, 'Firm A');
   await exerciseOpening(page, save);
+  const settlement = await exerciseContractors(page, save, back, forward);
   await firmSwitcher.focus();
   await page.keyboard.press('ArrowDown');
   await activeFirm(page, 'Firm B');
@@ -292,8 +489,17 @@ try {
   await page.getByRole('heading', { name: 'Reversal #42', exact: true }).waitFor();
   await pressButton(page, 'voucher #41');
   await page.getByText('2026-11-20 · Phase 3 sample payment', { exact: true }).waitFor();
+  await page.getByLabel('Active firm', { exact: true }).focus();
+  await page.keyboard.press('ArrowUp');
+  await activeFirm(page, 'Firm A');
+  await choosePage(page, 'Contractors');
+  await pressButton(page, 'Anuj Kumar');
+  await page.getByText('Archived records', { exact: true }).waitFor();
+  assert.deepEqual(await page.locator('.books .balances dd').allTextContents(), ['₹40,000', '₹2,000', '₹38,000', '₹8,000']);
+  await pressButton(page, settlement);
+  await page.getByRole('heading', { name: 'Journal ' + settlement, exact: true }).waitFor();
   assert.deepEqual((await readdir(join(profile, 'workspaces'))).filter(name => name.endsWith('.sqlite3')).sort(), ['demo.sqlite3', 'live.sqlite3']);
-  console.log('Desktop smoke passed: offline workspace and firm persistence, keyboard account setup, opening balance, payment, day book and trial balance drill-down, ledger filter and focus restoration, and linked reversal after restart.');
+  console.log('Desktop smoke passed: offline workspace and firm persistence, voucher entry and reversal, contractor site splits and cash returns, shared assignments, settlement, archive and source drill-down after restart.');
 } finally {
   try {
     if (app) await app.close();

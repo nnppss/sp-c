@@ -1,6 +1,7 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { ACCOUNT_KINDS, PAGE_SIZE, VOUCHER_KINDS } from './books';
-import type { Account, BookCommand, BookResult, Chart, Ledger, Line, Site, TrialBalance, Voucher, VoucherDetail } from './books';
+import type { Account, BookCommand, BookResult, Chart, ContractorDirectory, ContractorLedger, Ledger, Line, Site,
+  TrialBalance, Voucher, VoucherDetail } from './books';
 
 export const accountingSchema = `
   CREATE TABLE accounts (
@@ -137,6 +138,72 @@ function createAccount(db: DatabaseSync, firmId: number, input: Record<string, u
   return inserted;
 }
 
+function getContractor(db: DatabaseSync, firmId: number, value: unknown, active = false) {
+  const account = getAccount(db, firmId, value, active);
+  check(account.kind === 'contractor', 'Choose a contractor in this firm.');
+  return account;
+}
+
+function getContractors(db: DatabaseSync, firmId: number): ContractorDirectory {
+  const { accounts, sites } = getChart(db, firmId);
+  const contractors = accounts.filter(account => account.kind === 'contractor').map(account => ({ ...account, siteIds: [] as number[] }));
+  const byId = new Map(contractors.map(account => [account.id, account]));
+  for (const { accountId, siteId } of db.prepare(`SELECT account_id AS accountId, site_id AS siteId
+    FROM site_assignments WHERE firm_id = ? ORDER BY site_id`).all(firmId) as { accountId: number; siteId: number }[]) {
+    byId.get(accountId)?.siteIds.push(siteId);
+  }
+  return { contractors, sites };
+}
+
+function saveContractor(db: DatabaseSync, firmId: number, input: Record<string, unknown>) {
+  const name = text(input.name, 'Contractor name', 180, true);
+  check(Array.isArray(input.siteIds) && Array.isArray(input.newSites), 'Enter valid site assignments.');
+  const names = input.newSites.map(value => text(value, 'Site name', 180, true));
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const sites = new Set(input.siteIds.map(value => getSite(db, firmId, value)));
+    const account = input.id === null ? createAccount(db, firmId, { name, kind: 'contractor' })
+      : getContractor(db, firmId, input.id, true);
+    if (account.name !== name) db.prepare('UPDATE accounts SET name = ? WHERE firm_id = ? AND id = ?').run(name, firmId, account.id);
+    const createSite = db.prepare('INSERT INTO sites (firm_id, name) VALUES (?, ?) ON CONFLICT (firm_id, name) DO NOTHING');
+    const findSite = db.prepare('SELECT id FROM sites WHERE firm_id = ? AND name = ?');
+    for (const siteName of names) {
+      createSite.run(firmId, siteName);
+      sites.add(findSite.get(firmId, siteName)!.id as number);
+    }
+    db.prepare('DELETE FROM site_assignments WHERE firm_id = ? AND account_id = ?').run(firmId, account.id);
+    const assign = db.prepare('INSERT INTO site_assignments (firm_id, account_id, site_id) VALUES (?, ?, ?)');
+    for (const siteId of sites) assign.run(firmId, account.id, siteId);
+    db.exec('COMMIT');
+    return { ...account, name };
+  } catch (error) {
+    db.exec('ROLLBACK');
+    if (error instanceof Error && 'errcode' in error && error.errcode === 2067) {
+      throw new BookInputError('A contractor with that name already exists in this firm.');
+    }
+    throw error;
+  }
+}
+
+function removeContractor(db: DatabaseSync, firmId: number, value: unknown) {
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const { id } = getContractor(db, firmId, value, true);
+    const archived = !!db.prepare('SELECT 1 FROM posting_lines WHERE firm_id = ? AND account_id = ? LIMIT 1').get(firmId, id);
+    if (archived) {
+      db.prepare('UPDATE accounts SET archived = 1 WHERE firm_id = ? AND id = ?').run(firmId, id);
+    } else {
+      db.prepare('DELETE FROM site_assignments WHERE firm_id = ? AND account_id = ?').run(firmId, id);
+      db.prepare('DELETE FROM accounts WHERE firm_id = ? AND id = ?').run(firmId, id);
+    }
+    db.exec('COMMIT');
+    return { archived };
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+}
+
 type Posting = { day: string; kind: string; memo: string; lines: Line[]; reversesId?: number | null;
   sourceId?: number; sourceAmount?: number; document?: unknown };
 
@@ -260,27 +327,65 @@ function getDayBook(db: DatabaseSync, firmId: number, input: Record<string, unkn
   return { rows: rows.slice(0, PAGE_SIZE), hasNext: rows.length > PAGE_SIZE };
 }
 
-function getLedger(db: DatabaseSync, firmId: number, input: Record<string, unknown>): Ledger {
-  const account = getAccount(db, firmId, input.accountId);
+function getLedger(db: DatabaseSync, firmId: number, input: Record<string, unknown>, contractor: true): ContractorLedger;
+function getLedger(db: DatabaseSync, firmId: number, input: Record<string, unknown>): Ledger;
+function getLedger(db: DatabaseSync, firmId: number, input: Record<string, unknown>, contractor = false): Ledger | ContractorLedger {
+  const account = contractor ? getContractor(db, firmId, input.accountId) : getAccount(db, firmId, input.accountId);
   const site = input.siteId === undefined ? null : getSite(db, firmId, input.siteId);
   const { from, to } = period(input);
   const scope = `FROM posting_lines l JOIN vouchers v ON v.firm_id = l.firm_id AND v.id = l.voucher_id
     WHERE l.firm_id = $firm AND l.account_id = $account AND ($site IS NULL OR l.site_id = $site)
       AND ($to IS NULL OR v.day <= $to)`;
   const params = { firm: firmId, account: account.id, site, to, from };
+  // A shared voucher can have cash and noncash offsets with no link from a specific line to either.
+  const method = `(SELECT CASE
+      WHEN COUNT(*) FILTER (WHERE a.kind IN ('bank', 'cash')) = 0 THEN 'Noncash'
+      WHEN COUNT(*) FILTER (WHERE a.kind NOT IN ('bank', 'cash')) > 0 THEN 'Mixed offsets'
+      WHEN COUNT(DISTINCT a.kind) = 2 THEN 'Bank and cash'
+      WHEN MAX(a.kind) = 'bank' THEN 'Bank' ELSE 'Cash' END
+    FROM posting_lines p JOIN accounts a ON a.firm_id = p.firm_id AND a.id = p.account_id
+    WHERE p.firm_id = l.firm_id AND p.voucher_id = l.voucher_id AND (p.value > 0) <> (l.value > 0))`;
+  const cashMovement = "method IN ('Bank', 'Cash', 'Bank and cash')";
   // The window includes earlier lines so period and page changes preserve the running balance.
   const rows = db.prepare(`WITH movements AS (
     SELECT l.id AS lineId, v.id AS voucherId, v.day, v.kind, v.memo, l.site_id AS siteId, l.value,
-      CAST(SUM(l.value) OVER (ORDER BY v.day, v.id, l.id ROWS UNBOUNDED PRECEDING) AS TEXT) AS running ${scope}
+      CAST(SUM(l.value) OVER (ORDER BY v.day, v.id, l.id ROWS UNBOUNDED PRECEDING) AS TEXT) AS running
+      ${contractor ? `, ${method} AS method, v.reverses_id IS NOT NULL AS reversal` : ''} ${scope}
     )
     SELECT * FROM movements WHERE $from IS NULL OR day >= $from
     ORDER BY day, voucherId, lineId LIMIT $limit OFFSET $offset`)
-    .all({ ...params, limit: PAGE_SIZE + 1, offset: pageOffset(input.page) }) as (Omit<Ledger['rows'][number], 'running'> & { running: string })[];
+    .all({ ...params, limit: PAGE_SIZE + 1, offset: pageOffset(input.page) }) as
+    (Omit<Ledger['rows'][number], 'running'> & { running: string; method: string; reversal: number })[];
   const totals = db.prepare(`SELECT CAST(COALESCE(SUM(l.value) FILTER (WHERE v.day < $from), 0) AS TEXT) AS opening,
     CAST(COALESCE(SUM(l.value), 0) AS TEXT) AS closing ${scope}`).get(params) as { opening: string; closing: string };
-  return {
+  const ledger = {
     opening: BigInt(totals.opening), closing: BigInt(totals.closing),
-    rows: rows.slice(0, PAGE_SIZE).map(row => ({ ...row, running: BigInt(row.running) })), hasNext: rows.length > PAGE_SIZE,
+    rows: rows.slice(0, PAGE_SIZE).map(({ method, reversal, ...row }) => ({ ...row, running: BigInt(row.running) })),
+    hasNext: rows.length > PAGE_SIZE,
+  };
+  if (!contractor) return ledger;
+
+  const siteTotals = db.prepare(`WITH movements AS (
+      SELECT l.site_id AS siteId, l.value, v.day, ${method} AS method,
+        (l.value > 0) = (v.reverses_id IS NULL) AS wasGiven ${scope}
+    ) SELECT siteId, CAST(SUM(value) AS TEXT) AS balance,
+      CAST(COALESCE(SUM(value) FILTER (WHERE ${cashMovement} AND wasGiven AND ($from IS NULL OR day >= $from)), 0) AS TEXT) AS given,
+      CAST(COALESCE(SUM(-value) FILTER (WHERE ${cashMovement} AND NOT wasGiven AND ($from IS NULL OR day >= $from)), 0) AS TEXT) AS received
+    FROM movements GROUP BY siteId`).all(params) as { siteId: number | null; balance: string; given: string; received: string }[];
+  const sites = siteTotals.map(({ siteId, balance, given, received }) => ({
+    siteId, balance: BigInt(balance), given: BigInt(given), received: BigInt(received),
+  }));
+  const money = sites.reduce((sum, site) => ({
+    balance: sum.balance + site.balance, given: sum.given + site.given, received: sum.received + site.received,
+  }), { balance: 0n, given: 0n, received: 0n });
+  return {
+    ...ledger, money, sites,
+    rows: ledger.rows.map((row, index) => {
+      const { method, reversal } = rows[index];
+      const cash = method === 'Bank' || method === 'Cash' || method === 'Bank and cash';
+      const wasGiven = (row.value > 0) !== Boolean(reversal);
+      return { ...row, method, given: cash && wasGiven ? row.value : 0, received: cash && !wasGiven ? -row.value : 0 };
+    }),
   };
 }
 
@@ -309,11 +414,19 @@ function getTrialBalance(db: DatabaseSync, firmId: number, input: Record<string,
 export function runAccountingCommand(db: DatabaseSync, firm: { id: number; archived: boolean }, command: BookCommand): BookResult {
   const firmId = firm.id;
   if (command.operation === 'getChart') return getChart(db, firmId);
+  if (command.operation === 'getContractors') return getContractors(db, firmId);
   const input = fields(command.input);
   switch (command.operation) {
     case 'createAccount':
       check(!firm.archived, 'Choose an active firm to create accounts.');
       return createAccount(db, firmId, input);
+    case 'saveContractor':
+      check(!firm.archived, 'Choose an active firm to save contractors.');
+      return saveContractor(db, firmId, input);
+    case 'removeContractor':
+      check(!firm.archived, 'Choose an active firm to remove contractors.');
+      return removeContractor(db, firmId, input.accountId);
+    case 'getContractorLedger': return getLedger(db, firmId, input, true);
     case 'postVoucher': return post(db, firm, input, false);
     case 'reverseVoucher': return post(db, firm, input, true);
     case 'getVoucher': return getVoucher(db, firmId, input.voucherId);

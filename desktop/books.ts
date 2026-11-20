@@ -9,6 +9,9 @@ export type VoucherKind = typeof VOUCHER_KINDS[number];
 export type Account = { id: number; name: string; kind: AccountKind; archived: number; system: string | null };
 export type Site = { id: number; name: string };
 export type Chart = { accounts: Account[]; sites: Site[] };
+export type Contractor = Account & { siteIds: number[] };
+export type ContractorDirectory = { contractors: Contractor[]; sites: Site[] };
+export type ContractorDetails = { id: number | null; name: string; siteIds: number[]; newSites: string[] };
 export type Line = { accountId: number; siteId: number | null; value: number };
 export type Voucher = {
   id: number; day: string; kind: string; memo: string; amount: number;
@@ -28,11 +31,21 @@ export type Ledger = Paged<{
   lineId: number; voucherId: number; day: string; kind: string; memo: string;
   siteId: number | null; value: number; running: bigint;
 }> & { opening: bigint; closing: bigint };
+export type ContractorTotals = { given: bigint; received: bigint; balance: bigint };
+export type ContractorLedger = Omit<Ledger, 'rows'> & {
+  rows: (Ledger['rows'][number] & { method: string; given: number; received: number })[];
+  money: ContractorTotals;
+  sites: (ContractorTotals & { siteId: number | null })[];
+};
 export type TrialBalance = { rows: (Account & { balance: bigint })[]; debit: bigint; credit: bigint };
 
 type BookOperations = {
   getChart: [undefined, Chart];
   createAccount: [{ name: string; kind: AccountKind }, Account];
+  getContractors: [undefined, ContractorDirectory];
+  saveContractor: [ContractorDetails, Account];
+  removeContractor: [{ accountId: number }, { archived: boolean }];
+  getContractorLedger: [LedgerQuery, ContractorLedger];
   postVoucher: [PostVoucher, VoucherDetail];
   reverseVoucher: [ReverseVoucher, VoucherDetail];
   getVoucher: [{ voucherId: number }, VoucherDetail];
@@ -42,7 +55,8 @@ type BookOperations = {
 };
 
 export const BOOK_OPERATIONS = [
-  'getChart', 'createAccount', 'postVoucher', 'reverseVoucher', 'getVoucher', 'getDayBook', 'getLedger', 'getTrialBalance',
+  'getChart', 'createAccount', 'getContractors', 'saveContractor', 'removeContractor', 'getContractorLedger',
+  'postVoucher', 'reverseVoucher', 'getVoucher', 'getDayBook', 'getLedger', 'getTrialBalance',
 ] as const satisfies readonly (keyof BookOperations)[];
 
 export type BookOperation = keyof BookOperations;

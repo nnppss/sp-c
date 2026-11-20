@@ -121,3 +121,8 @@ footer { border-top: 1px solid var(--line); color: var(--muted); font-size: .76r
 .posting-row legend { padding: 0 4px; color: var(--muted); font-size: .83rem; font-weight: 650; }
 .posting-row input, .posting-row select { margin-bottom: 8px; }
 .book-balances { max-width: 460px; }
+.site-options { display: flex; flex-wrap: wrap; gap: 8px 16px; }
+.site-options label { display: inline-flex; gap: 6px; align-items: center; margin: 0; }
+.site-options input { width: auto; margin: 0; }
+.contractor-remove { margin-top: 16px; }
+.voucher-narration { display: block; overflow-wrap: anywhere; color: var(--muted); }

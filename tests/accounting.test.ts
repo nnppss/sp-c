@@ -218,3 +218,69 @@ test('a process killed after the header and first line leaves no partial voucher
     restarted.close();
   }
 });
+
+test('contractors share sites and trace a split payment, refund, settlement and reversal through one ledger', () => {
+  const db = openWorkspace(directory, 'live', fixture);
+  const run = books(db, 'live', firm(db, 'live', 'Contractor sample'));
+  const other = books(db, 'live', firm(db, 'live', 'Separate books'));
+  try {
+    const bank = run('createAccount', { kind: 'bank', name: 'Main bank' });
+    const cash = run('createAccount', { kind: 'cash', name: 'Office cash' });
+    const expense = run('createAccount', { kind: 'expense', name: 'Contract work' });
+    const anuj = run('saveContractor', { id: null, name: 'Anuj', siteIds: [], newSites: ['Yamuna', 'Bodla'] });
+    const { contractors, sites } = run('getContractors');
+    const yamuna = sites.find(site => site.name === 'Yamuna')!.id;
+    const bodla = sites.find(site => site.name === 'Bodla')!.id;
+    expect(contractors).toMatchObject([{ id: anuj.id, siteIds: [yamuna, bodla] }]);
+    expect(() => other('saveContractor', { id: null, name: 'Anuj', siteIds: [yamuna], newSites: ['Other site'] }))
+      .toThrow(/site in this firm/);
+    expect(other('getContractors')).toEqual({ contractors: [], sites: [] });
+
+    const payment = { requestId: 'split', kind: 'Payment', day: today, memo: 'Two sites', lines: [
+      line(anuj.id, 3_000_000, yamuna), line(anuj.id, 1_000_000, bodla), line(bank.id, -4_000_000),
+    ] } satisfies PostVoucher;
+    const paid = run('postVoucher', payment);
+    expect(run('postVoucher', payment)).toEqual(paid);
+    const refund = run('postVoucher', { requestId: 'return', kind: 'Receipt', day: today, memo: 'Bodla cash returned', lines: [
+      line(anuj.id, -200_000, bodla), line(cash.id, 200_000),
+    ] });
+    expect(run('getLedger', { accountId: bank.id }).rows).toMatchObject([{ voucherId: paid.id, value: -4_000_000 }]);
+    const ledger = () => run('getContractorLedger', { accountId: anuj.id });
+    const before = ledger();
+    expect(before.money).toEqual({ given: 4_000_000n, received: 200_000n, balance: 3_800_000n });
+    expect(before.rows).toMatchObject([
+      { voucherId: paid.id, siteId: yamuna, method: 'Bank', given: 3_000_000, received: 0, running: 3_000_000n },
+      { voucherId: paid.id, siteId: bodla, method: 'Bank', given: 1_000_000, received: 0, running: 4_000_000n },
+      { voucherId: refund.id, siteId: bodla, method: 'Cash', given: 0, received: 200_000, running: 3_800_000n },
+    ]);
+    expect(run('getContractorLedger', { accountId: anuj.id, siteId: yamuna }).closing).toBe(3_000_000n);
+    expect(run('getContractorLedger', { accountId: anuj.id, siteId: bodla }).rows[1].running).toBe(800_000n);
+    expect(run('getVoucher', { voucherId: before.rows[1].voucherId })).toEqual(paid);
+
+    const ravi = run('saveContractor', { id: null, name: 'Ravi', siteIds: [], newSites: ['yamuna'] });
+    expect(run('getContractors').contractors.find(account => account.id === ravi.id)?.siteIds).toEqual([yamuna]);
+    expect(ledger()).toEqual(before);
+    expect(() => run('saveContractor', { id: anuj.id, name: 'RAVI', siteIds: [], newSites: ['Unused site'] })).toThrow(/already exists/);
+    expect(run('getContractors')).toMatchObject({ contractors: [{ name: 'Anuj', siteIds: [yamuna, bodla] }, { name: 'Ravi' }], sites });
+    expect(run('removeContractor', { accountId: ravi.id })).toEqual({ archived: false });
+    expect(run('getContractors').contractors).toHaveLength(1);
+
+    const settled = run('postVoucher', { requestId: 'settle', day: '2026-11-21', kind: 'Journal', memo: 'Agreed work', lines: [
+      line(anuj.id, -3_000_000, yamuna), line(expense.id, 3_000_000),
+    ] });
+    expect(ledger().money).toEqual({ given: 4_000_000n, received: 200_000n, balance: 800_000n });
+    expect(ledger().rows.at(-1)).toMatchObject({ voucherId: settled.id, method: 'Noncash', given: 0, received: 0 });
+    expect(run('saveContractor', { id: anuj.id, name: 'Anuj Kumar', siteIds: [bodla], newSites: [] }).id).toBe(anuj.id);
+    expect(run('getContractorLedger', { accountId: anuj.id, siteId: yamuna }).rows).toHaveLength(2);
+    expect(() => run('postVoucher', { ...payment, requestId: 'unassigned' })).toThrow(/assigned site/);
+    expect(run('removeContractor', { accountId: anuj.id })).toEqual({ archived: true });
+    expect(run('getContractors').contractors).toMatchObject([{ id: anuj.id, name: 'Anuj Kumar', archived: 1, siteIds: [bodla] }]);
+    expect(() => run('postVoucher', { ...payment, requestId: 'archived' })).toThrow(/available account/);
+    expect(() => other('getContractorLedger', { accountId: anuj.id })).toThrow(/account in this firm/);
+    run('reverseVoucher', { requestId: 'reverse', day: '2026-11-22', voucherId: paid.id, memo: 'Correction' });
+    expect(ledger().money).toEqual({ given: 0n, received: 200_000n, balance: -3_200_000n });
+    expect(ledger().rows.at(-1)).toMatchObject({ kind: 'Reversal', given: -1_000_000, received: 0, method: 'Bank' });
+  } finally {
+    db.close();
+  }
+});

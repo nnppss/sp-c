@@ -35,7 +35,7 @@ async function load(workspace: WorkspaceKind, firmId: number, view: BookView) {
   }
 }
 
-function Table({ heading, headings, children, footer }: {
+export function Table({ heading, headings, children, footer }: {
   heading: string; headings: string[]; children: ReactNode; footer?: ReactNode;
 }) {
   return <div className="panel book-table" role="region" aria-label={heading}>
@@ -79,7 +79,7 @@ function Filters({ period, asOf, sites, siteId, apply }: {
   </form>;
 }
 
-function Pagination({ page, next, change }: { page: number; next: boolean; change: (page: number) => void }) {
+export function Pagination({ page, next, change }: { page: number; next: boolean; change: (page: number) => void }) {
   if (!page && !next) return null;
   return <div className="book-pagination" role="group" aria-label="Report pages">
     <button type="button" className="secondary" disabled={page === 0} onClick={() => change(page - 1)}>Previous page</button>

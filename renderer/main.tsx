@@ -5,6 +5,8 @@ import { NAME_LIMIT, WORKSPACES, workspaceName } from '../desktop/workspace';
 import type { Workspace, WorkspaceBridge, WorkspaceKind } from '../desktop/workspace';
 import { Books, DAY_BOOK, TRIAL_BALANCE } from './books';
 import type { BookView } from './books';
+import { Contractors, CONTRACTOR_DIRECTORY } from './contractors';
+import type { ContractorView } from './contractors';
 import { DemoBalances, Firms } from './firms';
 import './style.css';
 
@@ -16,7 +18,7 @@ const PAGES = ['Overview', 'Firms', 'Vouchers', 'Contractors', 'Cashbooks', 'Emp
 type Page = (typeof PAGES)[number];
 type Entry = {
   page: Page; focus?: string; selection?: [number, number];
-  book?: BookView; bookFirmId?: number; archivedFirmId?: number;
+  book?: BookView; contractor?: ContractorView; firmId?: number; archivedFirmId?: number;
 };
 const labels = { live: 'Live', demo: 'Demo' };
 const shortcuts = window.workspaces.isMac
@@ -37,9 +39,11 @@ function WorkspaceShell({ kind, switchWorkspace }: { kind: WorkspaceKind; switch
   const availableFirms = workspace?.firms.filter(firm => !firm.archived) ?? [];
   const activeDemo = workspace?.demo && workspace.demo.firmId === workspace.activeFirmId ? workspace.demo : null;
   const booksPage = entry.page === 'Vouchers' || entry.page === 'Reports';
+  const contractorsPage = entry.page === 'Contractors';
   const bookFirm = workspace?.firms.find(firm => firm.id === (entry.archivedFirmId ?? workspace.activeFirmId));
-  const bookView = entry.bookFirmId === bookFirm?.id && entry.book ? entry.book
+  const bookView = entry.firmId === bookFirm?.id && entry.book ? entry.book
     : entry.page === 'Reports' ? TRIAL_BALANCE : DAY_BOOK;
+  const contractorView = entry.firmId === bookFirm?.id && entry.contractor ? entry.contractor : CONTRACTOR_DIRECTORY;
 
   useEffect(() => {
     let active = true;
@@ -72,14 +76,23 @@ function WorkspaceShell({ kind, switchWorkspace }: { kind: WorkspaceKind; switch
   }
 
   function navigate(page: Page) {
-    if (page === entry.page && !entry.archivedFirmId) return;
+    if (page === entry.page && !entry.archivedFirmId && !(contractorsPage && contractorView.name !== 'directory')) return;
     setHistory({ entries: [...rememberFocus().slice(0, index + 1), { page }], index: index + 1 });
   }
 
-  function openBook(view: BookView, replace = false) {
-    const next = { page: entry.page, book: view, bookFirmId: bookFirm?.id, archivedFirmId: entry.archivedFirmId };
+  function openEntry(next: Entry, replace = false) {
     if (replace) setHistory({ entries: entries.map((item, position) => position === index ? next : item), index });
     else setHistory({ entries: [...rememberFocus().slice(0, index + 1), next], index: index + 1 });
+  }
+
+  function openBook(view: BookView, replace = false, page: Page = entry.page) {
+    openEntry({ page, book: view, firmId: bookFirm?.id, archivedFirmId: entry.archivedFirmId }, replace);
+  }
+
+  function openContractor(view: ContractorView, replace = false) {
+    const focusEntry = replace && view.name === 'directory' && contractorView.name === 'directory'
+      ? rememberFocus()[index] : { page: entry.page };
+    openEntry({ ...focusEntry, contractor: view, firmId: bookFirm?.id }, replace);
   }
 
   function openArchivedBooks(firmId: number) {
@@ -137,9 +150,10 @@ function WorkspaceShell({ kind, switchWorkspace }: { kind: WorkspaceKind; switch
         event.preventDefault();
         move(event.key === back ? -1 : 1);
       } else if (primary && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 's' &&
-          (entry.page === 'Workspace settings' || entry.page === 'Firms' || booksPage)) {
+          (entry.page === 'Workspace settings' || entry.page === 'Firms' || booksPage || contractorsPage)) {
         event.preventDefault();
-        const formId = booksPage ? '#book-form' : entry.page === 'Firms' ? '#firm-form' : '#settings-form';
+        const formId = booksPage ? '#book-form' : contractorsPage ? '#contractor-form'
+          : entry.page === 'Firms' ? '#firm-form' : '#settings-form';
         document.querySelector<HTMLFormElement>(formId)?.requestSubmit();
       }
     }}>
@@ -219,8 +233,13 @@ function WorkspaceShell({ kind, switchWorkspace }: { kind: WorkspaceKind; switch
             ? <Books key={bookFirm.id} workspace={kind} firm={bookFirm} view={bookView} savedFocus={entry.focus}
                 shortcut={shortcuts.save} open={view => openBook(view)} replace={view => openBook(view, true)} back={() => move(-1)} />
             : <p className="intro">Create or select a firm to open its books.</p>)}
-          {(entry.page === 'Workspace settings' || entry.page === 'Firms' || booksPage) && !workspace && !error && <p role="status">Opening workspace…</p>}
-          {!booksPage && entry.page !== 'Overview' && entry.page !== 'Workspace settings' && entry.page !== 'Firms' && (
+          {contractorsPage && workspace && (bookFirm
+            ? <Contractors key={bookFirm.id} workspace={kind} firm={bookFirm} view={contractorView} savedFocus={entry.focus}
+                shortcut={shortcuts.save} open={openContractor} replace={view => openContractor(view, true)} back={() => move(-1)}
+                showVoucher={(voucherId, saved) => openBook({ name: 'voucher', voucherId, saved }, saved, 'Vouchers')} />
+            : <p className="intro">Create or select a firm to open its contractors.</p>)}
+          {(entry.page === 'Workspace settings' || entry.page === 'Firms' || booksPage || contractorsPage) && !workspace && !error && <p role="status">Opening workspace…</p>}
+          {!booksPage && !contractorsPage && entry.page !== 'Overview' && entry.page !== 'Workspace settings' && entry.page !== 'Firms' && (
             <p className="intro">This module is awaiting implementation.</p>
           )}
         </main>

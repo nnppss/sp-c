@@ -12,7 +12,7 @@ export const accountLabels: Record<AccountKind, string> = {
 export const errorMessage = (error: unknown) => error instanceof Error
   ? error.message.replace(/^Error invoking remote method '[^']+': Error: /, '') : 'Could not access these books.';
 
-function today() {
+export function today() {
   const date = new Date();
   return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
 }
@@ -25,7 +25,7 @@ export function money(value: number | bigint) {
     (cents ? '.' + cents.toString().padStart(2, '0') : '');
 }
 
-function parseAmount(input: FormDataEntryValue | null) {
+export function parseAmount(input: FormDataEntryValue | null) {
   const amount = String(input ?? '').trim();
   if (!/^\d+(?:\.\d{1,2})?$/.test(amount)) throw new Error('Enter each amount in rupees with up to two decimal places.');
   const [rupees, cents = ''] = amount.split('.');
@@ -34,13 +34,24 @@ function parseAmount(input: FormDataEntryValue | null) {
   return Number(value);
 }
 
-function entryKeys(event: KeyboardEvent<HTMLFormElement>, cancel: () => void, busy: boolean) {
+export function entryKeys(event: KeyboardEvent<HTMLFormElement>, cancel: () => void, busy: boolean) {
   if (event.nativeEvent.isComposing) return;
   if (event.key === 'Escape' && !busy) {
     event.preventDefault();
     cancel();
   }
-  if (event.key !== 'Enter' || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || busy) return;
+  if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || busy) return;
+  const target = event.target;
+  if (target instanceof HTMLSelectElement && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
+    event.preventDefault();
+    const next = target.selectedIndex + (event.key === 'ArrowDown' ? 1 : -1);
+    if (next >= 0 && next < target.options.length) {
+      target.selectedIndex = next;
+      target.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    return;
+  }
+  if (event.key !== 'Enter') return;
   const fields = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('input, select, button[type="submit"]'));
   const index = fields.indexOf(event.target as HTMLElement);
   if (index >= 0 && index < fields.length - 1) {
@@ -49,9 +60,9 @@ function entryKeys(event: KeyboardEvent<HTMLFormElement>, cancel: () => void, bu
   }
 }
 
-type EntryContext = { workspace: WorkspaceKind; firmId: number; shortcut: string; cancel: () => void };
+export type EntryContext = { workspace: WorkspaceKind; firmId: number; shortcut: string; cancel: () => void };
 
-function useEntry<T>(submit: (data: FormData) => Promise<T>, done: (result: T) => void) {
+export function useEntry<T>(submit: (data: FormData) => Promise<T>, done: (result: T) => void) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const pending = useRef(false);
@@ -80,7 +91,7 @@ function useEntry<T>(submit: (data: FormData) => Promise<T>, done: (result: T) =
   return { busy, error, save };
 }
 
-function EntryActions({ label, busy, error, shortcut, cancel }: {
+export function EntryActions({ label, busy, error, shortcut, cancel }: {
   label: string; busy: boolean; error: string; shortcut: string; cancel: () => void;
 }) {
   return <>

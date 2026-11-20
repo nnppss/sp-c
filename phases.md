@@ -9,7 +9,7 @@
 | 1. Desktop foundation | Blocked | Verified offline restart and workspace isolation on Apple silicon. Intel Mac launch and Windows installer and launch checks need platform runners. |
 | 2. Firms | Verified | Firm details and the selected books survived an offline restart on Apple silicon. Unused firms can be deleted and referenced firms retain their history. |
 | 3. Vouchers and accounting core | Verified | Posted and reversed a ₹5,000.25 sample payment. The day book and trial balance led to the same voucher, and the fixture reconciled to ₹21,98,000 on each side. |
-| 4. Contractors | Planned | A single bank payment can be split across sites and traced back from Anuj’s ledger. |
+| 4. Contractors | Verified | One ₹40,000 bank payment and a ₹2,000 cash return leave Anuj with ₹38,000 net given. Both sites open the original payment. |
 | 5. Cashbooks | Planned | Vikram’s cashbook reconciles money entrusted, spent, returned and still held. |
 | 6. Employees | Planned | Salary, advances and reimbursements can be followed separately from cash held for the firm. First accountant pilot. |
 | 7. Bank | Planned | The accountant can import a statement, match or post each row, and resume after restart. |
@@ -118,6 +118,7 @@ Use a sample workspace with two firms, issued invoices, contractor site splits a
 | 20 Nov 2026 | Phase 1 desktop foundation | Captured all 40 vouchers, postings, site assignments, balances and the two invoice snapshots. The Electron app opens separate Live and Demo SQLite files through a worker. Keyboard navigation and offline restart passed in development and from the mounted Apple silicon DMG. [Commands and platform results](#phase-1-verification) |
 | 20 Nov 2026 | Phase 2 firms | Created Firm A and Firm B in a disposable Demo workspace, edited A, switched to B by keyboard and verified the saved selection and both firms’ details after relaunch. [Checks and platform coverage](#phase-2-verification) |
 | 20 Nov 2026 | Phase 3 vouchers and accounting core | Replayed the 40 prototype vouchers into SQLite and reconciled every account and site total. Posted a sample payment and followed it from the day book and trial balance through to the ledger and voucher. [Checks and platform coverage](#phase-3-verification) |
+| 20 Nov 2026 | Phase 4 contractors | Entered Anuj’s bank payment, site split, Bodla cash return and manual settlement from the keyboard. Verified shared assignments, voucher links, and archived history after restart. [Checks and platform coverage](#phase-4-verification) |
 
 ### Reproduce the prototype baseline
 
@@ -146,3 +147,10 @@ The local package attempts used cached Electron archives via `--config.electronD
 - The tests covered opening balances, payments, receipts, contra transfers, journals, and linked reversals. They rejected unbalanced lines, fractional paise, unassigned contractor sites and cross-firm accounts, sites and voucher links. Repeating a committed request returned the existing voucher, including after reopening the workspace. Killing the writer after it inserted the header and first line left zero partial rows. Retrying with the same ID posted one complete voucher.
 - `npm run test:desktop` passed on macOS 27.0 arm64 with Electron 45.3.2. In a disposable offline profile, the smoke test posted payment #41 for ₹5,000.25 from HDFC Bank to Anuj Kumar at Yamuna. The day book and the trial balance account drill-down opened #41. The Yamuna ledger closed at −₹12,999.75, and Back and Forward restored the site filter and voucher focus. After posting linked reversal #42, both trial balance totals returned to ₹21,98,000. The two voucher links still opened from the archived firm’s books after an offline relaunch.
 - The same desktop test created a bank and a cash account in Firm A and posted a ₹75.10 opening balance against Opening capital. Firm A’s trial balance showed ₹75.10 on each side. Phase 3 package checks on macOS and Windows remain pending.
+
+### Phase 4 verification
+
+- `npm run test:desktop` passed on macOS 27.0 arm64 with Electron 45.3.2. In a disposable offline Demo profile, the keyboard workflow posted one ₹40,000 bank withdrawal with ₹30,000 assigned to Yamuna and ₹10,000 to Bodla. After a ₹2,000 cash receipt for Bodla, Anuj showed ₹38,000 net given. Yamuna showed ₹30,000 and Bodla ₹8,000. Both sites opened the same payment voucher. Bodla also opened the cash receipt.
+- Assigning Ravi to Yamuna preserved Anuj’s totals. The smoke test searched by site and contractor name, restored the search and voucher focus with Back and Forward, and deleted Ravi’s unused record. A ₹30,000 settlement journal reduced Anuj’s ledger balance to ₹8,000 and kept net given at ₹38,000. The edited name and archived ledger persisted through offline restart and the journal still opened from the ledger.
+- `npm test` passed all ten tests, including site and firm validation, shared assignments, idempotent split payments, historical postings after site removal, and reversal of an archived contractor’s payment. `python3 -B scripts/capture-prototype.py --check` matched the 40-voucher baseline.
+- Phase 4 verification covered the development build on Apple silicon. Packaged macOS and Windows checks remain pending.
